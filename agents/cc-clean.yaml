@@ -1,0 +1,26 @@
+# Arm A: stock Claude Code, no plugins, no MCP servers, no user settings.
+#
+# Loads into slop_code.agent_runner.agents.claude_code.agent.ClaudeCodeConfig
+# (extra="forbid"). Uses SCB's stock claude_code/docker.j2, which installs
+# @anthropic-ai/claude-code@{{ version }}.
+#
+# Model and thinking are NOT set here: they come from the run config
+# (model: {provider: claude_code_oauth, name: opus-5.5}, thinking: high).
+# Opus 5.5 is an effort-style model, so SCB maps thinking=high to
+# CLAUDE_CODE_EFFORT_LEVEL=high and never sends MAX_THINKING_TOKENS.
+#
+# Credential: provider claude_code_oauth -> env var CLAUDE_CODE_OAUTH_TOKEN,
+# exported from ~/.config/scb/cc_oauth_token at run time only.
+type: claude_code
+binary: claude
+version: 2.1.304
+permission_mode: bypassPermissions
+timeout: 7200 # seconds per checkpoint invocation
+cost_limits:
+  # Subscription billing: cost is notional list price, so no dollar caps.
+  cost_limit: 0
+  net_cost_limit: 0
+  # SCB's stock claude_code.yaml uses step_limit: 100 (-> --max-turns 100).
+  # Set to 0 (no --max-turns) so neither arm is turn-capped; the wall-clock
+  # timeout is the only budget. Deliberate deviation from SCB's default.
+  step_limit: 0

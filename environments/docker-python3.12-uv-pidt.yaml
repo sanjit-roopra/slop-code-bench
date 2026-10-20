@@ -1,0 +1,65 @@
+# Copy of SCB configs/environments/docker-python3.12-uv.yaml (upstream 31ceea3)
+# plus a `snapshot` block for pi-dev-team's on-disk state. Used by the pi arms
+# (pidt, pidt-opus, pi-stock). cc-clean keeps SCB's stock environment.
+#
+# Snapshot globs live on the environment (EnvironmentSpec.snapshot ->
+# execution/models.py SnapshotConfig), not on the agent config.
+#
+# Semantics (execution/snapshot.py _walk_candidates, fnmatch where `*` also
+# matches `/`):
+#   - ignore_globs is checked first and prunes directories ("dir/" matched).
+#   - keep_globs, when non-empty, is an ALLOW-LIST: only matching files are
+#     archived. Setting keep_globs: [plans/*, .claude/memory/*] would drop all
+#     solution code from the snapshot. So keep_globs stays unset (archive
+#     everything not ignored).
+#   - plans/* is not ignored by default, so it is already kept.
+#   - .claude/memory/* is dropped by SCB's default ".claude/*" ignore. That
+#     default is replaced with ".claude/[!m]*" + ".claude/metrics/*", which
+#     keeps .claude/memory/ (needed for --resume from a snapshot) and still
+#     drops other .claude/ content.
+#   - Setting ignore_globs REPLACES the default set, so SCB's defaults are
+#     repeated verbatim below.
+type: docker
+name: python3.12 # same name as stock -> reuses the stock base image tag
+docker:
+  image: ghcr.io/astral-sh/uv:python3.12-trixie-slim
+  workdir: /workspace
+  mount_workspace: true
+environment:
+  env:
+    UV_CACHE_DIR: /tmp/uv-cache
+    PIP_CACHE_DIR: /tmp/pip-cache-dir
+    PIP_CONFIG_FILE: /tmp/pip-conf
+setup:
+  eval_commands:
+    - uv init
+    - uv add -r requirements.txt
+  resume_commands:
+    # Create venv and install deps using standard Python (agent uses pip, not uv)
+    - python -m venv .venv || true
+    - .venv/bin/pip install -r requirements.txt 2>/dev/null || true
+commands:
+  entry_file: "{entry_file}.py"
+  command: uv run
+  agent_command: "python"
+snapshot:
+  ignore_globs:
+    # --- SCB defaults (SnapshotConfig.ignore_globs), minus ".claude/*" ---
+    - "*.pyc"
+    - "__pycache__/*"
+    - "venv/*"
+    - ".venv/*"
+    - ".evaluation_tests/*"
+    - ".ruff_cache/*"
+    - ".pytest_cache/*"
+    - ".mypy_cache/*"
+    - ".opencode/*"
+    - "node_modules/*"
+    # --- .claude/: keep memory/, drop the rest ---
+    - ".claude/[!m]*"
+    - ".claude/metrics/*"
+    # --- pi / pi-dev-team artifacts ---
+    - ".pi/*"
+    - ".dev-team-reports/*"
+    - ".codegraph/*"
+    - "metrics/verify-log.jsonl"
