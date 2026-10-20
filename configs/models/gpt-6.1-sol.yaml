@@ -2,7 +2,7 @@ internal_name: gpt-6.1-sol
 provider: github-copilot
 pricing:
   # List rates; under a Copilot subscription this is notional spend.
-  # Prompts above 272k input tokens use the base rates below.
+  # Base rates apply above 272k input tokens; prompt_tiers covers 272k and under.
   input: 4.00
   output: 15.00
   cache_read: 0.20

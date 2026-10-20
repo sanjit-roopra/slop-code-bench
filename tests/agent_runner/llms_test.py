@@ -67,6 +67,10 @@ class TestAPIPricing:
         assert pricing.get_cost(high_tokens) == pytest.approx(
             ((150_001 * 4.0) + (1_000 * 18.0) + (50_000 * 0.4)) / 1_000_000
         )
+        # Spread over two requests, each prompt is under the tier again.
+        assert pricing.get_cost(high_tokens, requests=2) == pytest.approx(
+            ((150_001 * 2.0) + (1_000 * 12.0) + (50_000 * 0.2)) / 1_000_000
+        )
 
 
 class TestModelDefinition:

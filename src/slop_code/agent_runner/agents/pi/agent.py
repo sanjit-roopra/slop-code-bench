@@ -33,6 +33,9 @@ from slop_code.execution import DockerEnvironmentSpec
 from slop_code.execution import EnvironmentSpec
 from slop_code.execution import Session
 from slop_code.execution import StreamingRuntime
+from slop_code.logging import get_logger
+
+log = get_logger(__name__)
 
 PiThinking = tp.Literal["off", "minimal", "low", "medium", "high", "xhigh"]
 
@@ -516,14 +519,7 @@ class PiAgent(Agent):
         if not isinstance(usage, dict):
             return None, None, payload
 
-        cache_read = int(usage.get("cacheRead") or 0)
-        tokens = TokenUsage(
-            input=int(usage.get("input") or 0) + cache_read,
-            output=int(usage.get("output") or 0),
-            cache_read=cache_read,
-            cache_write=int(usage.get("cacheWrite") or 0),
-            reasoning=int(usage.get("reasoning") or 0),
-        )
+        tokens = PiAgent._usage_tokens(usage)
 
         reported_cost: float | None = None
         usage_cost = usage.get("cost")
@@ -532,15 +528,77 @@ class PiAgent(Agent):
             if isinstance(total, int | float):
                 reported_cost = float(total)
 
-        cost = (
-            reported_cost
-            if reported_cost is not None
-            else pricing.get_cost(tokens)
-            if pricing is not None
-            else 0.0
-        )
+        if reported_cost is not None:
+            cost = reported_cost
+        elif pricing is None:
+            cost = 0.0
+        elif message.get("role") == "toolResult":
+            cost = PiAgent._tool_result_cost(message, tokens, pricing)
+        else:
+            # One assistant message is one request.
+            cost = pricing.get_cost(tokens)
 
         return cost, tokens, payload
+
+    @staticmethod
+    def _usage_tokens(usage: dict[str, tp.Any]) -> TokenUsage:
+        cache_read = int(usage.get("cacheRead") or 0)
+        return TokenUsage(
+            input=int(usage.get("input") or 0) + cache_read,
+            output=int(usage.get("output") or 0),
+            cache_read=cache_read,
+            cache_write=int(usage.get("cacheWrite") or 0),
+            reasoning=int(usage.get("reasoning") or 0),
+        )
+
+    @staticmethod
+    def _tool_result_cost(
+        message: dict[str, tp.Any],
+        tokens: TokenUsage,
+        pricing: APIPricing,
+    ) -> float:
+        """Price a tool result's usage when pi reported no cost for it.
+
+        A tool result's usage is the total of every model call the tool made
+        (a dev_team_subagent result can span dozens of turns), so prompt
+        tiers cannot be chosen from it directly. When the tool lists its
+        per-run ``details.results[].usage``, each run uses its own reported
+        cost if present, otherwise its tokens are priced with the tier picked
+        by input per turn. Without that breakdown the base (untiered) rates
+        are used, an upper bound. Rates are the main model's: a subagent on a
+        different model is priced as if it ran the main one.
+        """
+        details = message.get("details")
+        results = details.get("results") if isinstance(details, dict) else None
+        runs = [
+            r["usage"]
+            for r in results or []
+            if isinstance(r, dict) and isinstance(r.get("usage"), dict)
+        ]
+        if not runs:
+            log.warning(
+                "agent.pi.tool_result_cost_untiered",
+                tool=message.get("toolName"),
+                input_tokens=tokens.input,
+            )
+            return pricing.model_copy(update={"prompt_tiers": []}).get_cost(
+                tokens
+            )
+
+        total = 0.0
+        for usage in runs:
+            run_cost = usage.get("cost")
+            if isinstance(run_cost, dict):
+                run_cost = run_cost.get("total")
+            if isinstance(run_cost, int | float):
+                total += float(run_cost)
+                continue
+            turns = usage.get("turns")
+            turns = int(turns) if isinstance(turns, int | float) else 1
+            total += pricing.get_cost(
+                PiAgent._usage_tokens(usage), requests=max(turns, 1)
+            )
+        return total
 
     @property
     def session(self) -> Session:
@@ -795,8 +853,9 @@ class PiAgent(Agent):
                 total_tokens = total_tokens + tokens
                 usage_messages += 1
                 # Per-message cost: pi's reported total when present, else
-                # model pricing for that message's tokens (prompt tiers
-                # apply per request, not to the run's aggregate).
+                # model pricing for that message's tokens. Prompt tiers are
+                # picked per request (see parse_line / _tool_result_cost),
+                # never from the run's aggregate.
                 total_cost += float(cost or 0.0)
 
             if not payload:

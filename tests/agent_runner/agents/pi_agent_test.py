@@ -1265,6 +1265,86 @@ class TestPiAgent:
         # Each request is under the tier: 2 x (0.4 + 1.0), not base rates.
         assert agent.usage.cost == pytest.approx(2.8)
 
+    @staticmethod
+    def _sol_like_pricing() -> APIPricing:
+        return APIPricing(
+            input=4.0,
+            output=15.0,
+            cache_read=0.2,
+            cache_write=5.0,
+            prompt_tiers=[
+                APIPricingTier(
+                    max_input_tokens=272_000,
+                    input=2.0,
+                    output=10.0,
+                    cache_read=0.1,
+                    cache_write=2.5,
+                )
+            ],
+        )
+
+    # One dev_team_subagent run from the real trace shape: 41 turns whose
+    # summed input (725k) is far above the 272k tier, while each turn is not.
+    _MULTI_TURN_USAGE = {"input": 10, "output": 1000, "cacheRead": 725_353}
+
+    def test_parse_line_tiers_tool_result_per_subagent_turn(self) -> None:
+        line = self._message_end(
+            "toolResult",
+            dict(self._MULTI_TURN_USAGE),
+            toolName="dev_team_subagent",
+            details={
+                "results": [
+                    {
+                        "model": "github-copilot/gpt-6.1-sol",
+                        "usage": {**self._MULTI_TURN_USAGE, "turns": 41},
+                    }
+                ]
+            },
+        )
+
+        cost, _, _ = PiAgent.parse_line(line, pricing=self._sol_like_pricing())
+
+        # Tier rates (~17.7k input per turn), not base rates.
+        assert cost == pytest.approx(2.0 * 10e-6 + 10.0 * 1e-3 + 0.1 * 0.725353)
+
+    def test_parse_line_sums_reported_subagent_run_costs(self) -> None:
+        line = self._message_end(
+            "toolResult",
+            dict(self._MULTI_TURN_USAGE),
+            toolName="dev_team_subagent",
+            details={
+                "results": [
+                    {"usage": {"input": 1, "cost": 0.03, "turns": 2}},
+                    {"usage": {"input": 1, "cost": {"total": 0.02}}},
+                ]
+            },
+        )
+
+        cost, _, _ = PiAgent.parse_line(line, pricing=self._sol_like_pricing())
+
+        assert cost == pytest.approx(0.05)
+
+    def test_parse_line_prices_tool_result_without_breakdown_untiered(
+        self,
+    ) -> None:
+        line = self._message_end(
+            "toolResult", dict(self._MULTI_TURN_USAGE), toolName="some_tool"
+        )
+
+        cost, _, _ = PiAgent.parse_line(line, pricing=self._sol_like_pricing())
+
+        # Turn count unknown: base rates, an upper bound.
+        assert cost == pytest.approx(4.0 * 10e-6 + 15.0 * 1e-3 + 0.2 * 0.725353)
+
+    def test_parse_line_tiers_assistant_message_as_one_request(self) -> None:
+        line = self._message_end(
+            "assistant", dict(self._MULTI_TURN_USAGE), stopReason="stop"
+        )
+
+        cost, _, _ = PiAgent.parse_line(line, pricing=self._sol_like_pricing())
+
+        assert cost == pytest.approx(4.0 * 10e-6 + 15.0 * 1e-3 + 0.2 * 0.725353)
+
     def test_run_raises_when_pi_returns_message_error_with_zero_exit(
         self,
         tmp_path: Path,
