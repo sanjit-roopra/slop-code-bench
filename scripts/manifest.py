@@ -4,7 +4,10 @@
 ``write`` records everything needed to reproduce and compare a run before it
 starts: arm, subset, repeat, SCB fork SHA, pi-dev-team SHA, Claude Code and pi
 versions, model ids, prompt, host, timestamp and the exact slop-code command.
-``finish`` adds the end time and exit status after the run.
+``finish`` adds the end time and exit status after the run, and records the
+docker images again (they may only exist once the run has built them).
+``expect-model`` prints the provider/model id the agent should report at run
+time, which ``check_clean.py --expect-model`` asserts.
 
 Credentials are never read or recorded here.
 """
@@ -57,14 +60,41 @@ def _git(repo: Path, *args: str) -> str | None:
 
 
 def git_info(repo: Path) -> dict[str, object]:
-    status = _git(repo, "status", "--porcelain", "--untracked-files=no")
+    # Untracked files count: an uncommitted new agent config or prompt is a
+    # change to what ran. Ignored files (results/, outputs/) do not.
+    status = _git(repo, "status", "--porcelain", "--untracked-files=all")
+    changes = status.splitlines() if status else []
     return {
-        "path": str(repo.relative_to(ROOT)) if repo != ROOT else ".",
+        "path": str(repo.relative_to(ROOT)) if repo.is_relative_to(ROOT) and repo != ROOT else "." if repo == ROOT else str(repo),
         "sha": _git(repo, "rev-parse", "HEAD"),
         "branch": _git(repo, "rev-parse", "--abbrev-ref", "HEAD"),
         "remote": _git(repo, "config", "--get", "remote.origin.url"),
-        "dirty": bool(status) if status is not None else None,
+        "dirty": bool(changes) if status is not None else None,
+        "changes": changes[:50],
     }
+
+
+def _sha256_file(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def file_info(ref: str | None, builtin_dir: Path | None = None) -> dict[str, object] | None:
+    """Path + sha256 of a config file; bare names resolve under ``builtin_dir``."""
+    if not ref:
+        return None
+    path = Path(ref)
+    bare = "/" not in ref and path.suffix not in (".yaml", ".yml")
+    if builtin_dir is not None and bare:
+        path = builtin_dir / f"{ref}.yaml"
+    elif not path.is_absolute():
+        path = ROOT / path
+    info: dict[str, object] = {"ref": ref, "path": str(path), "sha256": _sha256_file(path)}
+    if info["sha256"] is None:
+        info["missing"] = True
+    return info
 
 
 def _load_yaml(path: Path) -> dict:
@@ -124,6 +154,79 @@ def agent_info(agent_yaml: Path) -> dict[str, object]:
     return info
 
 
+_DOCKER_PREFIX = "slop-code"  # slop_code.execution.docker_runtime.IMAGE_NAME_PREFIX
+
+
+def _docker_inspect(ref: str) -> dict[str, object]:
+    info: dict[str, object] = {"ref": ref, "id": None, "repo_digests": None}
+    try:
+        out = subprocess.run(
+            ["docker", "image", "inspect", "--format", "{{json .Id}} {{json .RepoDigests}}", ref],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return info
+    if out.returncode != 0 or not out.stdout.strip():
+        return info
+    image_id, _, digests = out.stdout.strip().partition(" ")
+    try:
+        info["id"] = json.loads(image_id)
+        info["repo_digests"] = json.loads(digests) if digests else []
+    except json.JSONDecodeError:
+        pass
+    return info
+
+
+def image_info(agent: dict[str, object], environment: dict[str, object] | None) -> dict[str, object]:
+    """Image tags SCB builds/uses for this run (mirrors AgentConfigBase.get_image
+    and DockerEnvironmentSpec.get_base_image), each with its local image id and
+    registry digests when present. The upstream base is a floating tag, so its
+    digest is what pins it."""
+    env = _load_yaml(Path(str(environment["path"]))) if environment and environment.get("path") else {}
+    env_name = env.get("name")
+    upstream = (env.get("docker") or {}).get("image") if isinstance(env.get("docker"), dict) else None
+    out: dict[str, object] = {}
+    if env_name and agent.get("type"):
+        version = agent.get("version")
+        tag = f"{agent['type']}-{version}-{env_name}" if version else f"{agent['type']}-{env_name}"
+        out["agent"] = _docker_inspect(f"{_DOCKER_PREFIX}:{tag}")
+    if env_name:
+        out["base"] = _docker_inspect(f"{_DOCKER_PREFIX}:{env_name}")
+    if upstream:
+        out["upstream"] = _docker_inspect(str(upstream))
+    return out
+
+
+def expected_runtime_model(model: str, agent_type: str | None) -> str | None:
+    """The model id the agent should report at run time for ``provider/name``.
+
+    claude_code: the slug in the CC ``system``/``init`` event (``model``).
+    pi: ``<pi provider>/<slug>`` as on pi assistant messages. Mirrors
+    PiAgent._resolve_model_slug for the providers used here (SCB provider name
+    == pi provider name, e.g. github-copilot).
+    """
+    info = model_info(model)
+    if not info.get("internal_name"):
+        return None
+    provider = str(info["provider"])
+    slugs = info.get("provider_slugs") or {}
+    if agent_type == "claude_code":
+        return str(info["internal_name"])
+    if agent_type == "pi":
+        pi_provider = provider
+        try:  # SCB env: use its provider mapping when importable
+            from slop_code.agent_runner.agents.pi.agent import _SCB_TO_PI_PROVIDER
+
+            pi_provider = _SCB_TO_PI_PROVIDER.get(provider, provider)
+        except Exception:  # noqa: BLE001 - fall back to identity
+            pass
+        slug = slugs.get(pi_provider) or slugs.get(provider) or info["internal_name"]
+        return f"{pi_provider}/{slug}"
+    return None
+
+
 def model_info(model: str) -> dict[str, object]:
     provider, _, name = model.partition("/")
     info: dict[str, object] = {"cli": model, "provider": provider, "name": name}
@@ -137,6 +240,7 @@ def model_info(model: str) -> dict[str, object]:
         if path.stem == name or name in (data.get("aliases") or []):
             info["catalog_file"] = str(path.relative_to(ROOT))
             info["internal_name"] = data.get("internal_name")
+            info["provider_slugs"] = data.get("provider_slugs") or {}
             info["pricing"] = data.get("pricing")
             break
     else:
@@ -179,6 +283,9 @@ def host_info() -> dict[str, object]:
 
 def build_manifest(args: argparse.Namespace) -> dict[str, object]:
     agent = agent_info(Path(args.agent))
+    environment = file_info(args.environment, SCB / "configs" / "environments")
+    model = model_info(args.model)
+    model["expected_runtime"] = expected_runtime_model(args.model, agent.get("type"))  # type: ignore[arg-type]
     return {
         "schema": 1,
         "arm": args.arm,
@@ -195,12 +302,14 @@ def build_manifest(args: argparse.Namespace) -> dict[str, object]:
             "pi": agent.get("pi_version"),
             "pi_dev_team_sha": agent.get("pi_dev_team_sha"),
         },
-        "model": model_info(args.model),
+        "model": model,
         "thinking": args.thinking,
+        "timeout_s": agent.get("timeout"),
         "prompt": prompt_info(args.prompt),
-        "environment": args.environment,
+        "environment": environment,
+        "images": image_info(agent, environment),
         "problems": args.problem or None,
-        "run_config": args.run_config,
+        "run_config": file_info(args.run_config),
         "smoke_checkpoints": args.smoke_checkpoints,
         "host": host_info(),
         "command": args.command,
@@ -228,7 +337,19 @@ def cmd_finish(args: argparse.Namespace) -> int:
     manifest["finished_at"] = _now()
     manifest["exit_code"] = args.exit_code
     manifest["status"] = "finished" if args.exit_code == 0 else "failed"
+    env = manifest.get("environment")
+    if isinstance(env, dict) and isinstance(manifest.get("agent"), dict):
+        manifest["images"] = image_info(manifest["agent"], env)
     path.write_text(json.dumps(manifest, indent=2) + "\n")
+    return 0
+
+
+def cmd_expect_model(args: argparse.Namespace) -> int:
+    expected = expected_runtime_model(args.model, agent_info(Path(args.agent)).get("type"))  # type: ignore[arg-type]
+    if not expected:
+        print(f"manifest: cannot resolve runtime model for {args.model}", file=sys.stderr)
+        return 1
+    print(expected)
     return 0
 
 
@@ -258,6 +379,11 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--run-dir", required=True)
     f.add_argument("--exit-code", type=int, required=True)
     f.set_defaults(func=cmd_finish)
+
+    e = sub.add_parser("expect-model")
+    e.add_argument("--model", required=True, help="provider/name")
+    e.add_argument("--agent", required=True, help="agent YAML path")
+    e.set_defaults(func=cmd_expect_model)
 
     args = parser.parse_args(argv)
     return args.func(args)

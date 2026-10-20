@@ -6,10 +6,10 @@ Last updated: 2026-10-20. Plan overview: [`README.md`](README.md#plan).
 
 | # | Step | Status | Evidence |
 |---|------|--------|----------|
-| 1 | SCB fork + patches | Done in fork `harness-eval` | `67c6cf0` Copilot FILE credential -> only the `github-copilot` entry copied into the pi agent dir; `bb0e1f6` toolResult usage counted in cost/tokens; `71a2a11` `github-copilot` provider + `opus-5.5`, `gpt-6.1-sol`, `copilot-claude-opus-5.5` models. Not pushed. The submodule pointer in this repo still has to be committed at the fork's HEAD. |
+| 1 | SCB fork + patches | Done in fork `harness-eval` | `67c6cf0` Copilot FILE credential -> only the `github-copilot` entry copied into the pi agent dir; `bb0e1f6` toolResult usage counted in cost/tokens; `71a2a11` `github-copilot` provider + `opus-5.5`, `gpt-6.1-sol`, `copilot-claude-opus-5.5` models; `5fa3795` tool-result cost fallback picks prompt tiers per subagent turn. `tests/agent_runner/agents/pi_agent_test.py`: 68 passed (48 on upstream `31ceea3` + 20 new). `tests/agent_runner` + `tests/common`: 516 passed, 2 failed (`resume_integration_test` needs a Docker daemon; fails on upstream too). Submodule pointer committed at `5fa3795`. **Not pushed**: a fresh clone cannot fetch the pinned SHA until `harness-eval` is pushed to the fork. |
 | 2 | Repo skeleton | Done | `.gitignore` (results/, outputs/, auth files, tokens), `pyproject.toml` (pyyaml, pytest) |
 | 3 | Configs, templates, prompts | Done | `agents/{cc-clean,pidt,pi-stock}.yaml`, `templates/{pidt,pi-stock}.j2`, `environments/docker-python3.12-uv-pidt.yaml`, `prompts/pidt.jinja`, `runs/<arm>_{lite,lite_under20}.yaml` |
-| 4 | `run.sh`, manifest, clean check | Done | `run.sh --dry-run` resolves through SCB's loaders for 4 arms x 4 subsets (16/16); `uv run --with pytest pytest -q` 27 passed |
+| 4 | `run.sh`, manifest, clean check | Done | `run.sh --dry-run` resolves through SCB's loaders for 4 arms x 4 subsets (16/16, expected model printed for each); `uv run --with pytest pytest -q` 52 passed |
 
 What step 4 delivers:
 
@@ -19,7 +19,9 @@ What step 4 delivers:
 
 Known gaps and caveats:
 
-- `runs/pidt-opus_*.yaml` set `model.name: opus-5.5`, which is the Anthropic-API catalog entry. The Copilot entry is `copilot-claude-opus-5.5`. `run.sh` always passes `--model github-copilot/copilot-claude-opus-5.5`, which overrides the run config, so runs through `run.sh` are correct. Fix the run configs before using them directly.
+- Arm asymmetries (timeout 10800 s for pidt* vs 7200 s; pi-arm snapshots keep `.claude/memory/` + `plans/`, drop `.git/`) are recorded in `README.md#arms`; count timeouts per arm in step 7.
+- `--dry-run --resume` is wired to slop-code's resume preview but has only been exercised against a dir without SCB's `config.yaml` (slop-code reports it is not a run dir). Check it on the first real run dir.
+- The pi skill-leak check uses pi 1.3.0's two real formats (read from its `dist/core` source); the `<location>` listing test uses a system message rendered by pi's own `buildSystemPromptSections`, not a captured pi-stock run.
 - The pi clean check is a strict allowlist built from one pidt trace. pi-stock has no observed trace yet, so its first smoke may flag a system-prompt section that is actually stock. If that happens, read `clean_check.json` and extend `PI_CORE_SECTIONS` in `scripts/check_clean.py` only after confirming the section comes from pi itself.
 - The fallback check "the pi agent dir holds only auth.json/models.json" is not possible after the fact, because SCB does not keep the pi agent dir. The trace-based check covers that case instead: an extra extension shows up as extra tools or sections.
 - The Claude Code allowlist is tied to 2.1.304. Bumping the version means taking a fresh stock init event and updating `CC_STOCK_SKILLS` / `CC_STOCK_AGENTS` and the fixture.
@@ -29,7 +31,7 @@ Known gaps and caveats:
 
 This step spends real (subscription) model calls and builds the SCB images.
 
-1. Commit the submodule pointer at the fork's `harness-eval` HEAD. Push the fork if the run machine is not this one.
+1. Push the fork's `harness-eval` branch if the run machine is not this one (the submodule pointer is committed).
 2. Install the catalog once (network, no model calls):
    `uv run --project vendor/slop-code-bench slop-code sync`
 3. Make sure Docker is running and both logins exist (`~/.config/scb/cc_oauth_token`; `github-copilot` in `~/.pi/agent/auth.json`).

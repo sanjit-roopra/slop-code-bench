@@ -1,3 +1,4 @@
 [submodule "vendor/slop-code-bench"]
 	path = vendor/slop-code-bench
 	url = https://github.com/sanjit-roopra/slop-code-bench
+	branch = harness-eval

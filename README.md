@@ -25,6 +25,11 @@ and the extra models/providers).
 All arms run with `thinking=high`. C uses the same model family as A, so A vs C
 isolates the harness; B vs pi-stock isolates the extension.
 
+Known asymmetries between arms (account for them when comparing):
+
+- Wall-clock budget: `pidt` / `pidt-opus` get `timeout: 10800` s per checkpoint, `cc-clean` and `pi-stock` get 7200 s (plan + build + reviewer swarm runs longer). A score difference on timed-out checkpoints mixes the extension effect with the extra time, so the analysis must count timeouts per arm. `manifest.json` records `timeout_s`.
+- Snapshots: the pi arms' environment keeps `.claude/memory/` and `plans/` (for `--resume`) and drops `.git/` (pidt's prompt runs `git init`); `cc-clean` uses SCB's stock environment, which drops all of `.claude/`. Code metrics only read Python sources and skip `.git`, so scores are unaffected, but snapshot file counts and sizes differ by arm.
+
 Costs under the Claude and Copilot subscriptions are notional list prices from
 the SCB model catalog, not money spent.
 
@@ -73,8 +78,13 @@ Credentials (never printed, never committed):
 Each run writes `results/<YYYYMMDD>-<arm>-<subset>-r<REPEAT>/` containing SCB's
 normal output plus:
 
-- `manifest.json`: arm, subset, repeat, eval_coding and SCB fork SHAs (and dirty flags), pi-dev-team SHA, Claude Code / pi versions, model ids and catalog pricing, prompt path + sha256, agent config + template sha256, host, timestamps, exit code, the exact command, and `clean.status`.
+- `manifest.json`: arm, subset, repeat, eval_coding and SCB fork SHAs (dirty flags count untracked files; the first 50 changes are listed), pi-dev-team SHA, Claude Code / pi versions, model ids, catalog pricing and the expected runtime model id, timeout, prompt / agent config / template / environment / run-config sha256, docker image tags (agent, SCB base, upstream `ghcr.io/astral-sh/uv:python3.12-trixie-slim`) with local image id and repo digests (refreshed after the run, since the first run builds them), host, timestamps, exit code, the exact command, and `clean.status`.
 - `clean_check.json`: per-trace verdicts and reasons.
+
+`--resume DIR` checks that ARM and SUBSET match the dir's `manifest.json` and
+reuses its expected model, so the clean check runs against the right arm.
+`--dry-run --resume DIR` prints slop-code's own resume preview (done vs still
+to run) without starting an agent; the Claude token is not read for it.
 
 `run.sh` sets `TMPDIR=/tmp` (SCB puts the agent HOME under `tempfile.gettempdir()`,
 and macOS' default TMPDIR breaks the container mounts). Exit codes: `0` clean
@@ -86,8 +96,9 @@ otherwise slop-code's own exit code.
 SCB stores each checkpoint's agent stdout at `<run>/<problem>/<checkpoint>/agent/stdout.jsonl`
 (or inside `agent.tar.gz`). `check_clean.py` reads every one:
 
-- Claude Code: each `system`/`init` event must list only `builtin` plugins, no MCP servers, and skills/agents from the stock 2.1.304 allowlist (19 skills; `claude`, `Explore`, `general-purpose`, `Plan`, `statusline-setup`). Any namespaced `plugin:item` skill, agent or slash command, or a different `claude_code_version`, makes the run DIRTY.
-- pi: the system message may add only pi's builtin tools plus, for `pidt*`, the pi-dev-team tools; system-prompt sections are limited to pi's core ones plus `dev_team`; skills may load only from `/opt/pi-dev-team`; custom messages/entries must come from pi-dev-team. `pidt*` arms also fail if pi-dev-team did not load. `pi-stock` allows no extension at all.
+- Claude Code: each `system`/`init` event must list only `builtin` plugins, no MCP servers, `output_style: default`, and skills, agents and slash commands from the stock 2.1.304 allowlists (19 skills; `claude`, `Explore`, `general-purpose`, `Plan`, `statusline-setup`; 53 slash commands). Any namespaced `plugin:item` entry, an unlisted user/project command, or a different `claude_code_version` makes the run DIRTY.
+- pi: the system message may add only pi's builtin tools plus, for `pidt*`, the pi-dev-team tools; system-prompt sections are limited to pi's core ones plus `dev_team` (so pi's `skills`, `addendum` and `project_context` sections are DIRTY); skills may load only from `/opt/pi-dev-team`, checked in both of pi's formats (invoked `<skill name location>` blocks and the system prompt's `<location>` listing); custom messages/entries must come from pi-dev-team. `pidt*` arms also fail if pi-dev-team did not load. `pi-stock` allows no extension at all.
+- Model: `run.sh` passes `--expect-model` (`claude-opus-5-5`, `github-copilot/gpt-6.1-sol` or `github-copilot/claude-opus-5.5`, from `scripts/manifest.py expect-model`). The CC init model, every pi assistant `provider/model` and every pi-dev-team subagent model must match it, so a subagent frontmatter model swap is DIRTY.
 
 A DIRTY run must be excluded from comparisons.
 
@@ -101,7 +112,7 @@ uv run --with pytest pytest -q
 
 | # | Step | Status |
 |---|------|--------|
-| 1 | Fork SCB (`harness-eval`) + patches: Copilot file-credential passthrough, count `toolResult` usage (dev_team_subagent) in cost/tokens, Copilot provider + Opus 5.5 / GPT-6.1 Sol models | Done in fork (`67c6cf0`, `bb0e1f6`, `71a2a11`); submodule pointer update pending |
+| 1 | Fork SCB (`harness-eval`) + patches: Copilot file-credential passthrough, count `toolResult` usage (dev_team_subagent) in cost/tokens, Copilot provider + Opus 5.5 / GPT-6.1 Sol models | Done in fork (`67c6cf0`, `bb0e1f6`, `71a2a11`, `5fa3795`); submodule pointer committed; fork not pushed yet |
 | 2 | eval_coding skeleton: repo, submodule, `.gitignore`, `pyproject.toml`, layout | Done |
 | 3 | Arm configs, image templates, environment, prompts, per-arm run configs | Done (written, dry-run resolves for all arms) |
 | 4 | `run.sh` + manifest + clean check (+ smoke catalog, dry-run resolver, tests) | Done |

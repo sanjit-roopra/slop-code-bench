@@ -11,7 +11,8 @@
 #   --dry-run        resolve and print everything (incl. the slop-code command); run nothing
 #   --workers N      parallel problems (slop-code --num-workers), default 1
 #   --no-evaluate    skip SCB evaluation (agent only)
-#   --resume DIR     resume an existing run dir (slop-code --resume); ARM/SUBSET still required
+#   --resume DIR     resume an existing run dir (slop-code --resume); ARM/SUBSET must
+#                    match the dir's manifest.json. With --dry-run, shows slop-code's resume preview
 #   -h | --help      this help
 #
 # Env overrides: CC_MODEL, PIDT_MODEL, PIDT_OPUS_MODEL, PI_STOCK_MODEL,
@@ -42,7 +43,7 @@ THINKING="high"
 
 die() { echo "run.sh: $*" >&2; exit 2; }
 warn() { echo "run.sh: WARNING: $*" >&2; }
-usage() { sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 DRY_RUN=0
 WORKERS=1
@@ -126,8 +127,20 @@ case "$SUBSET" in
 esac
 
 # --- Output dir ---------------------------------------------------------------
+SAVED_EXPECT_MODEL=""
 if [[ -n "$RESUME" ]]; then
   RUN_DIR="$(cd "$RESUME" 2>/dev/null && pwd)" || die "--resume dir not found: $RESUME"
+  # The clean check and expected model depend on the arm, so a resume must use
+  # the arm (and subset) the run was started with.
+  SAVED_MANIFEST="$RUN_DIR/manifest.json"
+  [[ -f "$SAVED_MANIFEST" ]] || die "--resume: no manifest.json in $RUN_DIR (not a run.sh run dir?)"
+  saved_arm="$(jq -r '.arm // empty' "$SAVED_MANIFEST")"
+  saved_subset="$(jq -r '.subset // empty' "$SAVED_MANIFEST")"
+  [[ "$saved_arm" == "$ARM" ]] || die "--resume: $RUN_DIR was run as arm '$saved_arm', not '$ARM'"
+  [[ "$saved_subset" == "$SUBSET" ]] || die "--resume: $RUN_DIR was run as subset '$saved_subset', not '$SUBSET'"
+  SAVED_EXPECT_MODEL="$(jq -r '.model.expected_runtime // empty' "$SAVED_MANIFEST")"
+  saved_model="$(jq -r '.model.cli // empty' "$SAVED_MANIFEST")"
+  [[ -n "$saved_model" ]] && MODEL="$saved_model"   # what the run was started with
 else
   RUN_NAME="$(date +%Y%m%d)-${ARM}-${SUBSET}-r${REPEAT}"
   RUN_DIR="$ROOT/results/$RUN_NAME"
@@ -228,17 +241,39 @@ MANIFEST_ARGS=(write --run-dir "$RUN_DIR" --arm "$ARM" --subset "$SUBSET" --repe
 [[ "$SUBSET" == smoke ]] && MANIFEST_ARGS+=(--problem "$SMOKE_PROBLEM" --smoke-checkpoints "$SMOKE_CHECKPOINTS")
 PY=(uv run --quiet --project "$SCB" python)
 
+# Model id the agent must report at run time (CC init model / pi provider/model);
+# check_clean.py marks the run DIRTY on any other main or subagent model.
+if [[ -n "$SAVED_EXPECT_MODEL" ]]; then
+  EXPECT_MODEL="$SAVED_EXPECT_MODEL"
+else
+  EXPECT_MODEL="$("${PY[@]}" scripts/manifest.py expect-model --model "$MODEL" --agent "$AGENT_YAML")" \
+    || die "cannot resolve the runtime model id for $MODEL"
+fi
+echo "expect model: $EXPECT_MODEL"
+
 if [[ $DRY_RUN -eq 1 ]]; then
-  if [[ -z "$RESUME" ]]; then
-    # Resolve through SCB's own loaders (config, env, model catalog, agent
-    # schema, image tag). No credentials, no docker, no model calls.
-    echo "resolved (SCB loaders):"
-    if "${PY[@]}" scripts/resolve_config.py "${CMD[@]:6}"; then
-      echo "dry run: OK, nothing executed"
+  if [[ -n "$RESUME" ]]; then
+    # slop-code's own resume preview (what is done / still to run). It resolves
+    # credentials before previewing, so a placeholder stands in for the Claude
+    # token: the real one is not read in a dry run, and the preview returns
+    # before any agent starts.
+    echo "resume preview (slop-code --dry-run):"
+    [[ -n "$SMOKE_ROOT" ]] && export SCBENCH_PROBLEMS_PATH="$SMOKE_ROOT"
+    if [[ $NEEDS_CC_TOKEN -eq 1 && -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
+      CLAUDE_CODE_OAUTH_TOKEN="dry-run-placeholder" "${CMD[@]}" --dry-run
     else
-      echo "dry run: SCB could not resolve this configuration" >&2
-      exit 1
+      "${CMD[@]}" --dry-run
     fi
+    exit $?
+  fi
+  # Resolve through SCB's own loaders (config, env, model catalog, agent
+  # schema, image tag). No credentials, no docker, no model calls.
+  echo "resolved (SCB loaders):"
+  if "${PY[@]}" scripts/resolve_config.py "${CMD[@]:6}"; then
+    echo "dry run: OK, nothing executed"
+  else
+    echo "dry run: SCB could not resolve this configuration" >&2
+    exit 1
   fi
   exit 0
 fi
@@ -265,7 +300,7 @@ set -e
 
 "${PY[@]}" scripts/manifest.py finish --run-dir "$RUN_DIR" --exit-code "$RC" || warn "manifest finish failed"
 
-CLEAN_ARGS=("$RUN_DIR" --arm "$ARM")
+CLEAN_ARGS=("$RUN_DIR" --arm "$ARM" --expect-model "$EXPECT_MODEL")
 [[ "$ARM" == cc-clean ]] && CLEAN_ARGS+=(--expect-cc-version "$CC_VERSION")
 set +e
 "${PY[@]}" scripts/check_clean.py "${CLEAN_ARGS[@]}"
