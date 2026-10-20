@@ -4,14 +4,18 @@
 "Clean" means the agent ran with only what the arm is supposed to carry:
 
 * Claude Code arms (cc-clean): every ``system``/``init`` event in the
-  stream-json trace lists only builtin plugins, no MCP servers, and only the
-  skills/agents that stock Claude Code 2.1.304 ships with. Anything namespaced
-  (``plugin:skill``) or outside the stock allowlist means user or project
-  configuration leaked into the container.
+  stream-json trace lists only builtin plugins, no MCP servers, the default
+  output style, and only the skills/agents/slash commands that stock Claude
+  Code 2.1.304 ships with. Anything namespaced (``plugin:skill``) or outside
+  the stock allowlist means user or project configuration leaked into the
+  container.
 * pi arms: the pi system message lists only pi's builtin tools plus, for
   pi-dev-team arms, the pi-dev-team tools; only known system-prompt sections
   appear; skills load only from the pi-dev-team checkout; custom messages and
   session entries come only from pi-dev-team.
+* With ``--expect-model``, the model that actually ran must match: the CC init
+  ``model``, and for pi every assistant message's ``provider/model`` plus every
+  pi-dev-team subagent model (a subagent's frontmatter can pick its own).
 
 SCB stores each checkpoint's agent stdout at
 ``<run>/<problem>/<checkpoint>/agent/stdout.jsonl`` (or inside
@@ -25,6 +29,7 @@ Exit status: 0 CLEAN, 1 DIRTY, 2 UNKNOWN (no traces or no init info).
 from __future__ import annotations
 
 import argparse
+import html
 import io
 import json
 import re
@@ -64,6 +69,49 @@ CC_STOCK_SKILLS = frozenset(
 CC_STOCK_AGENTS = frozenset(
     {"claude", "Explore", "general-purpose", "Plan", "statusline-setup"}
 )
+# The init event's slash_commands = the stock skills + these 34 builtin
+# commands (53 in total in the 2.1.304 stock init). A user or project command
+# (~/.claude/commands/foo.md, <workspace>/.claude/commands) is not namespaced,
+# so only an allowlist catches it.
+CC_STOCK_SLASH_COMMANDS = CC_STOCK_SKILLS | frozenset(
+    {
+        "advisor",
+        "agents",
+        "auto-mode-setup",
+        "autocompact",
+        "clear",
+        "color",
+        "compact",
+        "config",
+        "output-style",
+        "context",
+        "effort",
+        "fast",
+        "focus",
+        "heapdump",
+        "init",
+        "mcp",
+        "import",
+        "model",
+        "__remote-workflow",
+        "workflow-launch-exec",
+        "reload-plugins",
+        "reload-skills",
+        "rename",
+        "ultrareview",
+        "security-review",
+        "usage",
+        "insights",
+        "recap",
+        "skill-doctor",
+        "goal",
+        "design-consent",
+        "design-revoke",
+        "list-agents",
+        "team-onboarding",
+    }
+)
+CC_STOCK_OUTPUT_STYLE = "default"
 CC_BUILTIN_PLUGIN_PATH = "builtin"
 
 # pi 1.3.0 builtin tools (read/bash/edit/write are on by default; grep/find/ls
@@ -91,7 +139,17 @@ TAR_NAME = "agent.tar.gz"
 REPORT_NAME = "clean_check.json"
 MANIFEST_NAME = "manifest.json"
 
-_SKILL_LOCATION_RE = re.compile(r'<skill\b[^>]*\blocation="([^"]+)"')
+# Two real pi 1.3.0 formats (dist/core/):
+# * an invoked skill (/skill:name, or pi-dev-team's /plan etc.) is expanded
+#   into a user message as `<skill name="..." location="...">` (agent-session.js);
+# * skills discovered on disk (~/.pi/agent/skills, .pi/skills, ...) are listed
+#   in the system prompt's `skills` section as
+#   `<skill><name>..</name><description>..</description><location>..</location></skill>`
+#   (skills.js formatSkillsForPrompt, XML-escaped).
+_SKILL_LOCATION_RES = (
+    re.compile(r'<skill\b[^>]*\blocation="([^"]+)"'),
+    re.compile(r"<location>([^<]+)</location>"),
+)
 
 
 # --- Result types -----------------------------------------------------------
@@ -147,10 +205,12 @@ def check_cc_events(
     events: Iterable[dict],
     path: str = "<events>",
     expect_version: str | None = None,
+    expect_model: str | None = None,
 ) -> TraceResult:
     result = TraceResult(path=path)
     inits = 0
     versions: set[str] = set()
+    models: set[str] = set()
     for event in events:
         if event.get("type") != "system" or event.get("subtype") != "init":
             continue
@@ -164,6 +224,18 @@ def check_cc_events(
                 reasons.append(
                     f"claude_code_version {version!r} != expected {expect_version!r}"
                 )
+
+        model = event.get("model")
+        if isinstance(model, str):
+            models.add(model)
+        if expect_model and model != expect_model:
+            reasons.append(f"model {model!r} != expected {expect_model!r}")
+
+        style = event.get("output_style")
+        if style != CC_STOCK_OUTPUT_STYLE:
+            reasons.append(
+                f"output_style {style!r} != stock {CC_STOCK_OUTPUT_STYLE!r}"
+            )
 
         for plugin in event.get("plugins") or []:
             if not isinstance(plugin, dict):
@@ -195,8 +267,14 @@ def check_cc_events(
         for cmd in event.get("slash_commands") or []:
             if ":" in str(cmd):
                 reasons.append(f"namespaced (plugin) slash command {cmd!r}")
+            elif cmd not in CC_STOCK_SLASH_COMMANDS:
+                reasons.append(f"slash command {cmd!r} not in stock allowlist")
 
-    result.info = {"init_events": inits, "claude_code_versions": sorted(versions)}
+    result.info = {
+        "init_events": inits,
+        "claude_code_versions": sorted(versions),
+        "models": sorted(models),
+    }
     result.reasons = sorted(set(result.reasons))
     return _finish(result, saw_init=inits > 0)
 
@@ -229,6 +307,7 @@ def check_pi_events(
     events: Iterable[dict],
     path: str = "<events>",
     dev_team: bool = True,
+    expect_model: str | None = None,
 ) -> TraceResult:
     result = TraceResult(path=path)
     allowed_tools = PI_BUILTIN_TOOLS | (PDT_TOOLS if dev_team else frozenset())
@@ -248,9 +327,12 @@ def check_pi_events(
             reasons.append(f"{where} customType {ct!r} not from pi-dev-team")
 
     def check_skills(content: object) -> None:
-        for loc in _SKILL_LOCATION_RE.findall(_text_of(content)):
-            if not (allowed_skill_roots and loc.startswith(allowed_skill_roots)):
-                reasons.append(f"skill loaded from {loc!r}")
+        text = _text_of(content)
+        for pattern in _SKILL_LOCATION_RES:
+            for loc in pattern.findall(text):
+                loc = html.unescape(loc)
+                if not (allowed_skill_roots and loc.startswith(allowed_skill_roots)):
+                    reasons.append(f"skill loaded from {loc!r}")
 
     for event in events:
         etype = event.get("type")
@@ -276,15 +358,22 @@ def check_pi_events(
                     tools_seen.add(str(name))
                     if name not in allowed_tools:
                         reasons.append(f"tool {name!r} from an unexpected extension")
-                for sec in (msg.get("sections") or {}).keys():
+                for sec, body in (msg.get("sections") or {}).items():
                     sections_seen.add(sec)
                     if sec not in allowed_sections:
                         reasons.append(f"unexpected system-prompt section {sec!r}")
+                    check_skills(body)
                 check_skills(msg.get("content"))
             elif role == "user":
                 check_skills(msg.get("content"))
             elif role == "custom":
                 check_custom(msg.get("customType"), "custom message")
+            elif role == "toolResult" and etype == "message_end":
+                details = msg.get("details")
+                runs = details.get("results") if isinstance(details, dict) else None
+                for run in runs or []:
+                    if isinstance(run, dict) and run.get("model"):
+                        subagent_models.add(str(run["model"]))
             elif role == "assistant":
                 if msg.get("provider") and msg.get("model"):
                     models.add(f"{msg['provider']}/{msg['model']}")
@@ -307,6 +396,11 @@ def check_pi_events(
     }
     if dev_team and system_msgs and not result.info["dev_team_loaded"]:
         reasons.append("pi-dev-team expected but not loaded")
+    if expect_model:
+        for m in sorted(models - {expect_model}):
+            reasons.append(f"assistant model {m!r} != expected {expect_model!r}")
+        for m in sorted(subagent_models - {expect_model}):
+            reasons.append(f"subagent model {m!r} != expected {expect_model!r}")
     result.reasons = sorted(set(reasons))
     return _finish(result, saw_init=system_msgs > 0)
 
@@ -335,20 +429,31 @@ def find_traces(run_dir: Path) -> Iterator[tuple[str, list[str]]]:
 
 
 def check_trace(
-    lines: Iterable[str], arm: str, path: str, expect_cc_version: str | None
+    lines: Iterable[str],
+    arm: str,
+    path: str,
+    expect_cc_version: str | None,
+    expect_model: str | None = None,
 ) -> TraceResult:
     spec = ARMS[arm]
     events = iter_events(lines)
     if spec["kind"] == "cc":
-        return check_cc_events(events, path, expect_version=expect_cc_version)
-    return check_pi_events(events, path, dev_team=bool(spec.get("dev_team")))
+        return check_cc_events(
+            events, path, expect_version=expect_cc_version, expect_model=expect_model
+        )
+    return check_pi_events(
+        events, path, dev_team=bool(spec.get("dev_team")), expect_model=expect_model
+    )
 
 
 def check_run(
-    run_dir: Path, arm: str, expect_cc_version: str | None = None
+    run_dir: Path,
+    arm: str,
+    expect_cc_version: str | None = None,
+    expect_model: str | None = None,
 ) -> dict[str, object]:
     traces = [
-        check_trace(lines, arm, path, expect_cc_version)
+        check_trace(lines, arm, path, expect_cc_version, expect_model)
         for path, lines in find_traces(run_dir)
     ]
     if not traces:
@@ -362,6 +467,7 @@ def check_run(
     return {
         "status": status,
         "arm": arm,
+        "expect_model": expect_model,
         "traces_checked": len(traces),
         "dirty": sum(t.status == "DIRTY" for t in traces),
         "unknown": sum(t.status == "UNKNOWN" for t in traces),
@@ -390,6 +496,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--arm", required=True, choices=sorted(ARMS))
     parser.add_argument("--expect-cc-version", default=None)
     parser.add_argument(
+        "--expect-model",
+        default=None,
+        help="model the agent must report: CC init model (e.g. claude-opus-5-5) "
+        "or pi provider/model (e.g. github-copilot/gpt-6.1-sol)",
+    )
+    parser.add_argument(
         "--no-write", action="store_true", help="print only; do not write files"
     )
     args = parser.parse_args(argv)
@@ -398,7 +510,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"check_clean: not a directory: {args.run_dir}", file=sys.stderr)
         return 2
 
-    report = check_run(args.run_dir, args.arm, args.expect_cc_version)
+    report = check_run(
+        args.run_dir, args.arm, args.expect_cc_version, args.expect_model
+    )
     if not args.no_write:
         (args.run_dir / REPORT_NAME).write_text(json.dumps(report, indent=2) + "\n")
         update_manifest(args.run_dir, report)

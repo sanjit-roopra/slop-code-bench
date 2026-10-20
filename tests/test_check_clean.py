@@ -151,6 +151,98 @@ def test_pidt_arm_without_dev_team_loaded_is_dirty():
     assert cc.check_pi_events(events, dev_team=False).status == "CLEAN"
 
 
+def test_cc_slash_allowlist_matches_stock_fixture_exactly():
+    init = _events("cc_init_clean.jsonl")[0]
+    assert len(init["slash_commands"]) == 53
+    assert set(init["slash_commands"]) == cc.CC_STOCK_SLASH_COMMANDS
+    assert init["output_style"] == cc.CC_STOCK_OUTPUT_STYLE
+
+
+def test_cc_unnamespaced_user_command_and_output_style_are_dirty():
+    init = copy.deepcopy(_events("cc_init_clean.jsonl")[0])
+    init["slash_commands"].append("foo")  # ~/.claude/commands/foo.md
+    init["output_style"] = "Explanatory"
+    r = cc.check_cc_events([init])
+    assert r.status == "DIRTY"
+    joined = "\n".join(r.reasons)
+    assert "slash command 'foo' not in stock allowlist" in joined
+    assert "output_style 'Explanatory'" in joined
+
+
+def test_cc_expect_model():
+    events = _events("cc_init_clean.jsonl")
+    assert cc.check_cc_events(events, expect_model="claude-opus-5-5").status == "CLEAN"
+    r = cc.check_cc_events(events, expect_model="claude-sonnet-5")
+    assert r.status == "DIRTY"
+    assert "model 'claude-opus-5-5' != expected 'claude-sonnet-5'" in r.reasons
+
+
+def test_pi_expect_model_matches_real_trace():
+    r = cc.check_pi_events(
+        _events("pi_pidt_clean.jsonl"), expect_model="github-copilot/gpt-6.1-sol"
+    )
+    assert r.status == "CLEAN", r.reasons
+
+
+def test_pi_wrong_main_model_is_dirty():
+    r = cc.check_pi_events(
+        _events("pi_pidt_clean.jsonl"), expect_model="github-copilot/claude-opus-5.5"
+    )
+    assert r.status == "DIRTY"
+    assert any(x.startswith("assistant model 'github-copilot/gpt-6.1-sol'") for x in r.reasons)
+
+
+def test_pi_subagent_model_swap_is_dirty():
+    events = copy.deepcopy(_events("pi_pidt_clean.jsonl"))
+    # A subagent whose frontmatter picks another provider/model, reported both
+    # as a pi-dev-team usage entry and on the dev_team_subagent tool result.
+    events.append(
+        {
+            "type": "entry_appended",
+            "entry": {
+                "type": "custom",
+                "customType": "dev-team-subagent-usage",
+                "data": {"model": "anthropic/claude-opus-5-5"},
+            },
+        }
+    )
+    events.append(
+        {
+            "type": "message_end",
+            "message": {
+                "role": "toolResult",
+                "toolName": "dev_team_subagent",
+                "details": {"results": [{"model": "openai/gpt-6"}]},
+            },
+        }
+    )
+    r = cc.check_pi_events(events, expect_model="github-copilot/gpt-6.1-sol")
+    assert r.status == "DIRTY"
+    joined = "\n".join(r.reasons)
+    assert "subagent model 'anthropic/claude-opus-5-5'" in joined
+    assert "subagent model 'openai/gpt-6'" in joined
+    assert not any(x.startswith("assistant model") for x in r.reasons)
+
+
+def test_pi_on_disk_skill_in_real_system_prompt_format_is_dirty():
+    # System message rendered by pi 1.3.0's own buildSystemPromptSections with
+    # one skill from ~/.pi/agent/skills (paths outside the skill sanitized).
+    events = _events("pi_stock_skill_leak.jsonl")
+    assert "<location>" in events[0]["message"]["sections"]["skills"]
+    r = cc.check_pi_events(events, dev_team=False)
+    assert r.status == "DIRTY"
+    joined = "\n".join(r.reasons)
+    assert "unexpected system-prompt section 'skills'" in joined
+    assert "skill loaded from '/root/.pi/agent/skills/leaky/SKILL.md'" in joined
+
+
+def test_pi_stock_system_prompt_without_skills_is_clean():
+    events = copy.deepcopy(_events("pi_stock_skill_leak.jsonl"))
+    del events[0]["message"]["sections"]["skills"]
+    r = cc.check_pi_events(events, dev_team=False)
+    assert r.status == "CLEAN", r.reasons
+
+
 # --- run level / CLI --------------------------------------------------------
 
 
