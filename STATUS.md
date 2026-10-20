@@ -58,9 +58,31 @@ Why pidt failed checkpoint 1:
 - The remaining 4 (`glob_case_sensitive`, `glob_character_class`, `glob_doublestar_crosses_dirs`, `glob_question_mark`) fail for Claude Code too, with `error: --mount mount: expected an existing directory`; look at those cases before treating them as an agent failure.
 - `plans/` was kept in the snapshot, as intended.
 
+### pidt-next: pi-dev-team candidate `feb5afd` (branch `request-as-spec`, not pushed)
+
+The candidate makes `/plan` save the user's request word for word under `.claude/memory/requests/` and tells the plan, the build and spec-compliance-review that this file outranks the plan. Run dir `results/20261020-pidt-next-smoke-r1`: finished, CLEAN (2 traces, all calls `github-copilot/gpt-6.1-sol`).
+
+| | Checkpoint 1 | Checkpoint 2 |
+|---|---|---|
+| Wall time | 5484 s | 4142 s |
+| Tokens (cache read / cache write / output) | 26.1M / 2.79M / 248k | 16.2M / 2.03M / 167k |
+| Notional cost (incl. sub-agents) | $12.07 | $8.37 |
+| Tests | core 1/1, functionality 16/27, error 4/4 | core 1/1, functionality 9/17, regression 21/32 |
+| Claude Code, same checkpoint | 1/1, 23/27, 2/4; $0.44 | 1/1, 12/17, 26/32; $0.37 |
+
+The format drift is gone: every `now_local` ends in `Z` and core passes. The plan carries a `**Source request**` line and spec-compliance dispatches name the request file. What still fails:
+
+- Checkpoint 1, 6 tests: the window semantics. The spec says a job is due when its trigger falls between `--now` and `--now + --duration`; the build reports the last trigger at or before `--now` (e.g. `02:00` instead of `03:30`, `2025-09-08T15:31` instead of `2025-09-10T15:30`), and emits one run per job where the window holds several triggers (15 events instead of 43 and 29).
+- Checkpoint 1, 4 glob tests: the same `--mount mount` error Claude Code hits, so likely a test-harness case, not an agent failure.
+- Checkpoint 2, 8 tests: `JOB_COMPLETED.total_size` for verify and dry-run jobs (the spec example shows `0`; the build sums file sizes), and pack boundaries that close a pack one file early, which shifts the later `PACK_CREATED` sizes and checksums.
+
+So the fix worked for the failure it targeted. The remaining gaps are misreadings of spec prose and examples that none of the reviewers caught, at about 30 to 50 times Claude Code's cost and wall time.
+
+Spend on pi-dev-team runs on 2026-10-20: $7.58 + about $7 (aborted pidt checkpoint 2) + $20.44 = about $35 notional, within the $100 cap.
+
 ## Next
 
-1. Decide how to handle the pidt plan drift (prompt change in `prompts/pidt.jinja`, or a pi-dev-team change that makes plans quote exact output formats from the spec), then rerun `./run.sh pidt smoke`.
+1. Decide whether to push pi-dev-team `request-as-spec` (`feb5afd`) and make it the pidt arm; the plan drift it targets is fixed (see pidt-next above).
 2. Cut pidt cost and time before step 6 (11 checkpoints): at about $7.58 and 79 min per checkpoint, `lite_under20` would be roughly $80+ notional and 14+ hours for one repeat.
 3. Optional: arm C `pidt-opus` smoke, to separate the harness effect from the model.
 4. Record outcomes here and in `README.md`, then step 6.
