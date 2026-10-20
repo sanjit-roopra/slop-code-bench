@@ -23,6 +23,7 @@ from slop_code.agent_runner.models import AgentCostLimits
 from slop_code.agent_runner.models import AgentError
 from slop_code.agent_runner.registry import build_agent_config
 from slop_code.common.llms import APIPricing
+from slop_code.common.llms import APIPricingTier
 from slop_code.common.llms import ModelDefinition
 from slop_code.execution import DockerConfig
 from slop_code.execution import DockerEnvironmentSpec
@@ -31,6 +32,8 @@ from slop_code.execution.runtime import RuntimeResult
 
 if TYPE_CHECKING:
     from slop_code.execution import Session
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 def run_with_deadline(call: Callable[[], None], timeout: float) -> None:
@@ -1078,6 +1081,185 @@ class TestPiAgent:
         assert agent.usage.net_tokens.output == 1_000_000
         assert agent.usage.net_tokens.cache_read == 1_000_000
         assert agent.usage.net_tokens.cache_write == 1_000_000
+
+    @staticmethod
+    def _run_stream(
+        tmp_path: Path,
+        lines: list[str],
+        pricing: APIPricing | None,
+    ) -> PiAgent:
+        stdout = "".join(f"{line}\n" for line in lines)
+        runtime = FakeRuntime()
+        runtime.events = [
+            *(RuntimeEvent(kind="stdout", text=f"{line}\n") for line in lines),
+            RuntimeEvent(
+                kind="finished",
+                result=RuntimeResult(
+                    exit_code=0,
+                    stdout=stdout,
+                    stderr="",
+                    setup_stdout="",
+                    setup_stderr="",
+                    elapsed=0.1,
+                    timed_out=False,
+                ),
+            ),
+        ]
+        spec = DockerEnvironmentSpec(
+            name="docker-test",
+            docker=DockerConfig(image="pi-test-image"),
+        )
+        session = FakeSession(runtime=runtime, working_dir=tmp_path, spec=spec)
+        agent = PiAgent(
+            problem_name="test-problem",
+            verbose=False,
+            image="pi-test-image",
+            cost_limits=AgentCostLimits(
+                step_limit=0, cost_limit=100.0, net_cost_limit=200.0
+            ),
+            pricing=pricing,
+            credential=None,
+            binary="pi",
+            provider="github-copilot",
+            model="gpt-6.1-sol",
+            timeout=None,
+            thinking=None,
+            extra_args=[],
+            env={},
+            models_json=None,
+        )
+        agent.setup(cast("Session", session))
+        agent.run("do something")
+        return agent
+
+    @staticmethod
+    def _message_end(role: str, usage: dict | None, **extra: object) -> str:
+        message: dict[str, object] = {"role": role, "content": [], **extra}
+        if usage is not None:
+            message["usage"] = usage
+        return json.dumps({"type": "message_end", "message": message})
+
+    def test_parse_line_counts_tool_result_usage(
+        self, mock_pricing: APIPricing
+    ) -> None:
+        line = self._message_end(
+            "toolResult",
+            {
+                "input": 21,
+                "output": 4145,
+                "cacheRead": 16633,
+                "cacheWrite": 18260,
+                "reasoning": 2377,
+                "cost": {"total": 0.0888053},
+            },
+            toolName="dev_team_subagent",
+        )
+
+        cost, tokens, payload = PiAgent.parse_line(line, pricing=mock_pricing)
+
+        assert cost == pytest.approx(0.0888053)
+        assert tokens is not None
+        assert tokens.input == 21 + 16633
+        assert tokens.output == 4145
+        assert tokens.cache_read == 16633
+        assert tokens.cache_write == 18260
+        assert tokens.reasoning == 2377
+        assert payload is not None
+
+    def test_parse_line_ignores_tool_result_without_usage(
+        self, mock_pricing: APIPricing
+    ) -> None:
+        line = self._message_end("toolResult", None, toolName="bash")
+        cost, tokens, payload = PiAgent.parse_line(line, pricing=mock_pricing)
+        assert cost is None
+        assert tokens is None
+        assert payload is not None
+
+    def test_parse_line_ignores_user_message_usage(
+        self, mock_pricing: APIPricing
+    ) -> None:
+        line = self._message_end(
+            "user", {"input": 5, "output": 5, "cost": {"total": 1.0}}
+        )
+        cost, tokens, _ = PiAgent.parse_line(line, pricing=mock_pricing)
+        assert cost is None
+        assert tokens is None
+
+    def test_run_counts_pi_dev_team_subagent_spend_from_real_trace(
+        self,
+        tmp_path: Path,
+        mock_pricing: APIPricing,
+    ) -> None:
+        # Trimmed from a real pi --mode json run with the pi-dev-team
+        # extension: 58 assistant turns (cost 0.7660835) and 11
+        # dev_team_subagent tool results (cost 1.3877747). tool_execution_end
+        # and turn_end repeat the same usage and must not be counted again.
+        lines = (
+            (FIXTURES_DIR / "pi_dev_team_trace.jsonl").read_text().splitlines()
+        )
+
+        agent = self._run_stream(tmp_path, lines, mock_pricing)
+
+        assert agent.usage.cost == pytest.approx(0.7660835 + 1.3877747)
+        tokens = agent.usage.net_tokens
+        assert tokens.cache_read == 5_411_392
+        assert tokens.input == 612 + 5_411_392
+        assert tokens.output == 55_095
+        assert tokens.cache_write == 424_218
+        assert tokens.reasoning == 15_298
+        # Tool results add spend, not steps: 58 assistant + 65 tool runs.
+        assert agent.usage.steps == 58 + 65
+
+    def test_run_prices_tool_result_usage_without_reported_cost(
+        self,
+        tmp_path: Path,
+        mock_pricing: APIPricing,
+    ) -> None:
+        million = {
+            "input": 1_000_000,
+            "output": 1_000_000,
+            "cacheRead": 1_000_000,
+            "cacheWrite": 1_000_000,
+        }
+        lines = [
+            self._message_end(
+                "toolResult", million, toolName="dev_team_subagent"
+            ),
+            self._message_end(
+                "assistant",
+                {**million, "cost": {"total": 0.5}},
+                stopReason="stop",
+            ),
+        ]
+
+        agent = self._run_stream(tmp_path, lines, mock_pricing)
+
+        # 1.38 priced from the model for the tool result + 0.5 reported.
+        assert agent.usage.cost == pytest.approx(1.38 + 0.5)
+        assert agent.usage.net_tokens.input == 4_000_000
+        assert agent.usage.net_tokens.output == 2_000_000
+
+    def test_run_applies_prompt_tiers_per_message(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        pricing = APIPricing(
+            input=4.0,
+            output=15.0,
+            prompt_tiers=[
+                APIPricingTier(max_input_tokens=272_000, input=2.0, output=10.0)
+            ],
+        )
+        usage = {"input": 200_000, "output": 100_000}
+        lines = [
+            self._message_end("assistant", usage, stopReason="toolUse"),
+            self._message_end("assistant", usage, stopReason="stop"),
+        ]
+
+        agent = self._run_stream(tmp_path, lines, pricing)
+
+        # Each request is under the tier: 2 x (0.4 + 1.0), not base rates.
+        assert agent.usage.cost == pytest.approx(2.8)
 
     def test_run_raises_when_pi_returns_message_error_with_zero_exit(
         self,

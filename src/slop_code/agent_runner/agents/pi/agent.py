@@ -132,6 +132,8 @@ _PROTECTED_PI_FLAGS = (
 _SIGTERM_EXIT_CODE = 128 + 15
 _OPENAI_AUTH_CLAIM = "https://api.openai.com/auth"
 _PI_ARTIFACT_EXCLUDED_EVENT_TYPES = frozenset({"message_update"})
+# ``message_end`` roles whose ``message.usage`` counts towards spend.
+_PI_USAGE_MESSAGE_ROLES = frozenset({"assistant", "toolResult"})
 
 
 def _decode_jwt_payload(token: str) -> dict[str, tp.Any] | None:
@@ -503,9 +505,13 @@ class PiAgent(Agent):
         message = payload.get("message")
         if not isinstance(message, dict):
             return None, None, payload
-        if message.get("role") != "assistant":
+        if message.get("role") not in _PI_USAGE_MESSAGE_ROLES:
             return None, None, payload
 
+        # Assistant turns carry the main agent's usage. Tool results carry
+        # usage only when the tool itself called a model (pi-dev-team's
+        # dev_team_subagent, for instance); that spend is not part of any
+        # assistant turn, so it is counted here exactly once.
         usage = message.get("usage")
         if not isinstance(usage, dict):
             return None, None, payload
@@ -769,8 +775,8 @@ class PiAgent(Agent):
         total_tokens = TokenUsage()
         step_count = 0
         runtime_result = None
-        reported_cost_micros = 0
-        has_reported_cost = False
+        total_cost = 0.0
+        usage_messages = 0
         stream_error_message: str | None = None
 
         for item in stream_cli_command(
@@ -784,9 +790,14 @@ class PiAgent(Agent):
                 runtime_result = item
                 break
 
-            _, tokens, payload = item
+            cost, tokens, payload = item
             if tokens is not None:
                 total_tokens = total_tokens + tokens
+                usage_messages += 1
+                # Per-message cost: pi's reported total when present, else
+                # model pricing for that message's tokens (prompt tiers
+                # apply per request, not to the run's aggregate).
+                total_cost += float(cost or 0.0)
 
             if not payload:
                 continue
@@ -817,16 +828,6 @@ class PiAgent(Agent):
                                 "PI assistant message ended with "
                                 f"stopReason='{stop_reason}'."
                             )
-                    usage = message.get("usage")
-                    if isinstance(usage, dict):
-                        usage_cost = usage.get("cost")
-                        if isinstance(usage_cost, dict):
-                            total = usage_cost.get("total")
-                            if isinstance(total, int | float):
-                                has_reported_cost = True
-                                reported_cost_micros += int(
-                                    round(float(total) * 1_000_000)
-                                )
             elif event_type == "tool_execution_end":
                 step_count += 1
                 self.usage.steps += 1
@@ -845,8 +846,8 @@ class PiAgent(Agent):
                 "reasoning_tokens": total_tokens.reasoning,
                 "total_tokens": total_tokens.input + total_tokens.output,
                 "steps": step_count,
-                "reported_cost_present": int(has_reported_cost),
-                "reported_cost_micros": reported_cost_micros,
+                "usage_messages": usage_messages,
+                "cost_micros": int(round(total_cost * 1_000_000)),
             },
             stdout=stdout,
             stderr=stderr,
@@ -933,10 +934,8 @@ class PiAgent(Agent):
             reasoning=reasoning_tokens,
         )
 
-        if int(totals.get("reported_cost_present") or 0):
-            cost = (
-                float(int(totals.get("reported_cost_micros") or 0)) / 1_000_000
-            )
+        if int(totals.get("usage_messages") or 0):
+            cost = float(int(totals.get("cost_micros") or 0)) / 1_000_000
         else:
             cost = self.pricing.get_cost(tokens) if self.pricing else 0.0
 
