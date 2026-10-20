@@ -1,6 +1,6 @@
 # Run outputs (raw traces, snapshots, per-run manifests). Keep summaries elsewhere.
 outputs/
-results/
+results/*
 !results/.gitkeep
 
 # Credentials: never commit.

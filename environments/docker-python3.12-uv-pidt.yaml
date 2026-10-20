@@ -13,10 +13,19 @@
 #     solution code from the snapshot. So keep_globs stays unset (archive
 #     everything not ignored).
 #   - plans/* is not ignored by default, so it is already kept.
-#   - .claude/memory/* is dropped by SCB's default ".claude/*" ignore. That
-#     default is replaced with ".claude/[!m]*" + ".claude/metrics/*", which
-#     keeps .claude/memory/ (needed for --resume from a snapshot) and still
-#     drops other .claude/ content.
+#   - .claude/memory/* is dropped by SCB's default ".claude/*" ignore. There is
+#     no negation syntax, so that default is replaced with a set of globs that
+#     matches every .claude/ entry except the memory/ directory: names whose
+#     first differing character is not the next letter of "memory", the exact
+#     prefixes m..memor, a plain file named "memory", and "memory" followed by
+#     anything but "/". .claude/metrics/, .claude/mcp.json, .claude/settings*
+#     etc. are all dropped; .claude/memory/** is kept (needed for --resume
+#     from a snapshot). tests/test_run_scripts.py checks this against SCB's
+#     own matcher.
+#   - .git/ is dropped. pidt's prompt runs `git init` + a baseline commit, so
+#     keeping it would make pi-arm snapshots (file counts, archive size) not
+#     comparable with cc-clean. --resume does not need the history: the prompt
+#     re-inits a repo when there is none. Code metrics already skip .git.
 #   - Setting ignore_globs REPLACES the default set, so SCB's defaults are
 #     repeated verbatim below.
 type: docker
@@ -55,9 +64,22 @@ snapshot:
     - ".mypy_cache/*"
     - ".opencode/*"
     - "node_modules/*"
-    # --- .claude/: keep memory/, drop the rest ---
+    # --- .claude/: keep memory/, drop the rest (see header) ---
     - ".claude/[!m]*"
-    - ".claude/metrics/*"
+    - ".claude/m[!e]*"
+    - ".claude/me[!m]*"
+    - ".claude/mem[!o]*"
+    - ".claude/memo[!r]*"
+    - ".claude/memor[!y]*"
+    - ".claude/memory[!/]*"
+    - ".claude/m"
+    - ".claude/me"
+    - ".claude/mem"
+    - ".claude/memo"
+    - ".claude/memor"
+    - ".claude/memory"
+    # --- git history from the prompt's `git init` ---
+    - ".git/*"
     # --- pi / pi-dev-team artifacts ---
     - ".pi/*"
     - ".dev-team-reports/*"
