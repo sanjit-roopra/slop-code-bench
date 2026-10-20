@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import os
-import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
-HOME_PATH = str(Path(tempfile.gettempdir()) / "agent_home")
+# Container-side agent HOME. It must match the HOME baked into the images
+# (setup_base.docker.j2 sets ENV HOME=/tmp/agent_home), so it is fixed rather
+# than derived from the host's tempfile.gettempdir(): on macOS that is
+# /var/folders/..., and hosts may set TMPDIR to a VM-shared path.
+HOME_PATH = "/tmp/agent_home"  # noqa: S108 - container path, not a host temp file
 
 
 def resolve_env_vars(config):
