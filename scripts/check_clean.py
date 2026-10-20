@@ -130,6 +130,7 @@ PDT_CUSTOM_PREFIX = "dev-team"
 ARMS = {
     "cc-clean": {"kind": "cc"},
     "pidt": {"kind": "pi", "dev_team": True},
+    "pidt-next": {"kind": "pi", "dev_team": True},
     "pidt-opus": {"kind": "pi", "dev_team": True},
     "pi-stock": {"kind": "pi", "dev_team": False},
 }

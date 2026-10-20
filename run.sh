@@ -3,7 +3,7 @@
 #
 #   ./run.sh [options] ARM SUBSET [REPEAT]
 #
-#   ARM     cc-clean | pidt | pidt-opus | pi-stock
+#   ARM     cc-clean | pidt | pidt-next | pidt-opus | pi-stock
 #   SUBSET  smoke | lite_under20 | lite | full
 #   REPEAT  repeat index, default 1 (output dir suffix -r<REPEAT>)
 #
@@ -100,6 +100,14 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
+  pidt-next)
+    # A pi-dev-team candidate (agents/pidt-next.yaml pins its SHA) against arm B: same model and prompt.
+    AGENT_YAML="$ROOT/agents/pidt-next.yaml"
+    MODEL="${PIDT_MODEL:-github-copilot/gpt-6.1-sol}"
+    PROMPT="$ROOT/prompts/pidt.jinja"
+    ENVIRONMENT="$ENV_PI"
+    NEEDS_PI_AUTH=1
+    ;;
   pidt-opus)
     # Same agent + image as pidt; only the model differs (isolates the harness vs arm A).
     AGENT_YAML="$ROOT/agents/pidt-opus.yaml"
@@ -116,7 +124,7 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
-  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-opus|pi-stock)" ;;
+  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-next|pidt-opus|pi-stock)" ;;
 esac
 
 # --- Subset -> problem selection ---------------------------------------------
@@ -232,7 +240,8 @@ ENV_PREFIX="TMPDIR=$TMPDIR"
 [[ -n "${DOCKER_HOST:-}" ]] && ENV_PREFIX+=" DOCKER_HOST=$DOCKER_HOST"
 [[ -n "$SMOKE_ROOT" ]] && ENV_PREFIX+=" SCBENCH_PROBLEMS_PATH=$SMOKE_ROOT"
 
-PDT_SHA="$(grep -oE 'PDT_SHA = "[0-9a-f]+"' "$ROOT/templates/pidt.j2" 2>/dev/null | grep -oE '[0-9a-f]{7,}' || true)"
+PDT_TEMPLATE="$ROOT/$(sed -n 's/^docker_template: *//p' "$AGENT_YAML" 2>/dev/null)"
+PDT_SHA="$(grep -oE 'PDT_SHA = "[0-9a-f]+"' "$PDT_TEMPLATE" 2>/dev/null | grep -oE '[0-9a-f]{7,}' || true)"
 
 echo "arm:         $ARM"
 echo "subset:      $SUBSET (repeat $REPEAT)"
