@@ -569,6 +569,12 @@ class PiAgent(Agent):
             and self.credential.credential_type == CredentialType.FILE
         ):
             self._write_converted_codex_auth(self._pi_auth_dir)
+        elif (
+            self.credential is not None
+            and self.credential.provider in _PI_PROVIDER_NAMES
+            and self.credential.credential_type == CredentialType.FILE
+        ):
+            self._write_pi_provider_auth(self._pi_auth_dir)
 
         if self.models_json is not None:
             models_path = self._pi_auth_dir / self.MODELS_FILENAME
@@ -613,6 +619,50 @@ class PiAgent(Agent):
         converted = self._convert_codex_auth_payload(payload)
         auth_path = target_dir / "auth.json"
         auth_path.write_text(json.dumps(converted), encoding="utf-8")
+        auth_path.chmod(0o666)
+
+    @staticmethod
+    def _extract_pi_provider_auth(
+        payload: dict[str, tp.Any],
+        pi_provider: str,
+    ) -> dict[str, dict[str, tp.Any]]:
+        """Keep only ``pi_provider``'s entry from a pi ``auth.json`` payload.
+
+        The host's pi ``auth.json`` can hold logins for several providers;
+        the container only ever needs the one it runs against.
+        """
+        entry = payload.get(pi_provider)
+        if not isinstance(entry, dict) or not entry:
+            raise AgentError(
+                f"pi auth file has no '{pi_provider}' entry. Log in with "
+                f"`pi` (/login {pi_provider}) on the host first."
+            )
+        return {pi_provider: entry}
+
+    def _write_pi_provider_auth(self, target_dir: Path) -> None:
+        """Copy one provider's login from a host pi ``auth.json``.
+
+        Used for FILE credentials whose provider is a pi provider name (for
+        instance ``github-copilot`` pointing at ``~/.pi/agent/auth.json``).
+        pi refreshes OAuth tokens in place, so the copy stays writable.
+        """
+        if self.credential is None:
+            raise AgentError("pi auth copy requires a credential")
+
+        pi_provider = self.credential.provider
+        try:
+            payload = json.loads(self.credential.value)
+        except json.JSONDecodeError as e:
+            raise AgentError(
+                f"Failed to parse pi auth JSON for '{pi_provider}'"
+            ) from e
+
+        if not isinstance(payload, dict):
+            raise AgentError("Invalid pi auth payload: expected JSON object")
+
+        extracted = self._extract_pi_provider_auth(payload, pi_provider)
+        auth_path = target_dir / "auth.json"
+        auth_path.write_text(json.dumps(extracted), encoding="utf-8")
         auth_path.chmod(0o666)
 
     def run(self, task: str) -> None:

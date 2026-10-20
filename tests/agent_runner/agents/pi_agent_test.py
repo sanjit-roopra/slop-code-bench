@@ -814,6 +814,136 @@ class TestPiAgent:
         with pytest.raises(AgentError, match="Failed to parse Codex auth JSON"):
             agent.setup(cast("Session", session))
 
+    @staticmethod
+    def _copilot_agent(
+        credential: ProviderCredential,
+        cost_limits: AgentCostLimits,
+        pricing: APIPricing,
+    ) -> PiAgent:
+        return PiAgent(
+            problem_name="test-problem",
+            verbose=False,
+            image="pi-test-image",
+            cost_limits=cost_limits,
+            pricing=pricing,
+            credential=credential,
+            binary="pi",
+            provider="github-copilot",
+            model="gpt-6.1-sol",
+            timeout=None,
+            thinking=None,
+            extra_args=[],
+            env={},
+            models_json=None,
+        )
+
+    @staticmethod
+    def _pi_auth_credential(
+        provider: str, value: str, tmp_path: Path
+    ) -> ProviderCredential:
+        return ProviderCredential(
+            provider=provider,
+            credential_type=CredentialType.FILE,
+            value=value,
+            source=str(tmp_path / "auth.json"),
+            destination_key="",
+        )
+
+    def test_setup_with_copilot_file_auth_copies_only_copilot_entry(
+        self,
+        tmp_path: Path,
+        mock_cost_limits: AgentCostLimits,
+        mock_pricing: APIPricing,
+    ) -> None:
+        copilot_entry = {
+            "type": "oauth",
+            "refresh": "fake-refresh",
+            "access": "fake-access",
+            "expires": 1,
+        }
+        host_auth = {
+            "github-copilot": copilot_entry,
+            "anthropic": {"type": "oauth", "access": "other-secret"},
+            "openai-codex": {"type": "oauth", "access": "codex-secret"},
+        }
+        credential = self._pi_auth_credential(
+            "github-copilot", json.dumps(host_auth), tmp_path
+        )
+        spec = DockerEnvironmentSpec(
+            name="docker-test",
+            docker=DockerConfig(image="pi-test-image"),
+        )
+        session = FakeSession(
+            runtime=FakeRuntime(), working_dir=tmp_path, spec=spec
+        )
+        agent = self._copilot_agent(credential, mock_cost_limits, mock_pricing)
+
+        agent.setup(cast("Session", session))
+
+        assert agent._pi_auth_dir is not None
+        auth_path = agent._pi_auth_dir / "auth.json"
+        assert json.loads(auth_path.read_text()) == {
+            "github-copilot": copilot_entry
+        }
+        assert auth_path.stat().st_mode & 0o777 == 0o666
+        assert "other-secret" not in auth_path.read_text()
+        assert "codex-secret" not in auth_path.read_text()
+
+    def test_copilot_file_auth_is_not_injected_as_env(
+        self,
+        tmp_path: Path,
+        mock_cost_limits: AgentCostLimits,
+        mock_pricing: APIPricing,
+    ) -> None:
+        raw = json.dumps({"github-copilot": {"type": "oauth", "access": "x"}})
+        credential = self._pi_auth_credential("github-copilot", raw, tmp_path)
+        session = FakeSession(runtime=FakeRuntime(), working_dir=tmp_path)
+        agent = self._copilot_agent(credential, mock_cost_limits, mock_pricing)
+
+        agent.setup(cast("Session", session))
+        _, env = agent._prepare_runtime_execution("task")
+
+        assert all(raw not in value for value in env.values())
+        assert all("access" not in value for value in env.values())
+
+    def test_setup_with_copilot_file_auth_missing_entry_raises(
+        self,
+        tmp_path: Path,
+        mock_cost_limits: AgentCostLimits,
+        mock_pricing: APIPricing,
+    ) -> None:
+        credential = self._pi_auth_credential(
+            "github-copilot",
+            json.dumps({"anthropic": {"type": "oauth", "access": "a"}}),
+            tmp_path,
+        )
+        session = FakeSession(runtime=FakeRuntime(), working_dir=tmp_path)
+        agent = self._copilot_agent(credential, mock_cost_limits, mock_pricing)
+
+        with pytest.raises(AgentError, match="no 'github-copilot' entry"):
+            agent.setup(cast("Session", session))
+
+    def test_setup_with_invalid_pi_auth_json_raises(
+        self,
+        tmp_path: Path,
+        mock_cost_limits: AgentCostLimits,
+        mock_pricing: APIPricing,
+    ) -> None:
+        credential = self._pi_auth_credential(
+            "github-copilot", "{not-json", tmp_path
+        )
+        session = FakeSession(runtime=FakeRuntime(), working_dir=tmp_path)
+        agent = self._copilot_agent(credential, mock_cost_limits, mock_pricing)
+
+        with pytest.raises(AgentError, match="Failed to parse pi auth JSON"):
+            agent.setup(cast("Session", session))
+
+    def test_extract_pi_provider_auth_rejects_non_object_entry(self) -> None:
+        with pytest.raises(AgentError, match="no 'github-copilot' entry"):
+            PiAgent._extract_pi_provider_auth(
+                {"github-copilot": "token"}, "github-copilot"
+            )
+
     def test_parse_line_message_end_usage(
         self, mock_pricing: APIPricing
     ) -> None:
