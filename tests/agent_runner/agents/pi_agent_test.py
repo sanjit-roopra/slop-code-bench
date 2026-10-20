@@ -18,13 +18,17 @@ from slop_code.agent_runner.agents.pi import PiAgent
 from slop_code.agent_runner.agents.pi import PiConfig
 from slop_code.agent_runner.agents.utils import HOME_PATH
 from slop_code.agent_runner.credentials import CredentialType
+from slop_code.agent_runner.credentials import ProviderCatalog
 from slop_code.agent_runner.credentials import ProviderCredential
 from slop_code.agent_runner.models import AgentCostLimits
 from slop_code.agent_runner.models import AgentError
 from slop_code.agent_runner.registry import build_agent_config
 from slop_code.common.llms import APIPricing
 from slop_code.common.llms import APIPricingTier
+from slop_code.common.llms import ModelCatalog
 from slop_code.common.llms import ModelDefinition
+from slop_code.common.llms import TokenUsage
+from slop_code.entrypoints.utils import parse_model_override
 from slop_code.execution import DockerConfig
 from slop_code.execution import DockerEnvironmentSpec
 from slop_code.execution.runtime import RuntimeEvent
@@ -1512,6 +1516,76 @@ class TestPiAgent:
         assert agent._last_command is not None
         assert agent._last_command.result is not None
         assert agent._last_command.result.exit_code == 143
+
+
+class TestPiCopilotCatalog:
+    """The shipped catalogs route Copilot models through pi."""
+
+    @pytest.fixture(autouse=True)
+    def _real_catalogs(self) -> Iterable[None]:
+        ProviderCatalog.clear()
+        ModelCatalog.clear()
+        yield
+        ProviderCatalog.clear()
+        ModelCatalog.clear()
+
+    def test_github_copilot_is_a_pi_auth_file_provider(self) -> None:
+        provider = ProviderCatalog.get("github-copilot")
+        assert provider is not None
+        assert provider.credential_type == CredentialType.FILE
+        assert provider.file_path == "~/.pi/agent/auth.json"
+
+    @pytest.mark.parametrize(
+        ("model_ref", "pi_model"),
+        [
+            ("github-copilot/gpt-6.1-sol", "gpt-6.1-sol"),
+            ("github-copilot/copilot-claude-opus-5.5", "claude-opus-5.5"),
+        ],
+    )
+    def test_copilot_models_build_pi_agent(
+        self,
+        model_ref: str,
+        pi_model: str,
+        mock_cost_limits: AgentCostLimits,
+    ) -> None:
+        override = parse_model_override(model_ref)
+        credential = ProviderCredential(
+            provider=override.provider,
+            credential_type=CredentialType.FILE,
+            value="{}",
+            source="auth.json",
+            destination_key="",
+        )
+        agent = PiAgent._from_config(
+            config=PiConfig(
+                type="pi", version="1.3.0", cost_limits=mock_cost_limits
+            ),
+            model=override.model_def,
+            credential=credential,
+            problem_name="test-problem",
+            verbose=False,
+            image="test-image",
+        )
+        assert isinstance(agent, PiAgent)
+        assert agent.provider == "github-copilot"
+        assert agent.model == pi_model
+        assert agent.models_json is None
+
+    def test_gpt_6_1_sol_uses_prompt_tier_under_272k(self) -> None:
+        model = ModelCatalog.get("gpt-6.1-sol")
+        assert model is not None
+        small = TokenUsage(input=1_000_000 // 4, output=0)
+        large = TokenUsage(input=300_000, output=0)
+        assert model.pricing.get_cost(small) == pytest.approx(0.5)
+        assert model.pricing.get_cost(large) == pytest.approx(1.2)
+
+    def test_opus_5_5_is_an_effort_model_for_claude_code(self) -> None:
+        model = ModelCatalog.get("opus-5.5")
+        assert model is not None
+        assert model.internal_name == "claude-opus-5-5"
+        assert model.provider == "anthropic"
+        assert model.thinking_style == "effort"
+        assert ModelCatalog.resolve_canonical("claude-opus-5.5") == "opus-5.5"
 
 
 class TestPiAgentRegistration:

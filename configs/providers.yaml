@@ -167,3 +167,10 @@ providers:
     type: file
     file_path: ~/.gemini/oauth_creds.json
     description: Gemini CLI OAuth credentials file
+
+  github-copilot:
+    type: file
+    file_path: ~/.pi/agent/auth.json
+    description: >-
+      pi auth file holding a GitHub Copilot login (pi /login github-copilot);
+      the pi agent copies only the github-copilot entry into the container
