@@ -26,6 +26,10 @@ ENV GIT_AUTHOR_NAME="SCB Agent" \
     GIT_COMMITTER_EMAIL="agent@scb.local"
 
 # --- Agent user ---------------------------------------------------------------
+# SCB runs the agent through `bash -l`, and Debian's /etc/profile resets PATH,
+# dropping the npm-global bin dir set via ENV below. Re-add it for login shells.
+RUN printf 'export PATH="%s/.npm-global/bin:$PATH"\n' "$HOME" > /etc/profile.d/npm-global.sh
+
 USER agent
 WORKDIR /workspace
 
@@ -36,7 +40,7 @@ ENV XDG_CONFIG_HOME="$HOME/.config"
 ENV XDG_DATA_HOME="$HOME/.local/share"
 
 RUN npm install -g @earendil-works/pi-coding-agent@{{ PI_VERSION }} && \
-    test "$(pi --version)" = "{{ PI_VERSION }}" && \
+    test "$("$NPM_CONFIG_PREFIX/bin/pi" --version)" = "{{ PI_VERSION }}" && \
     mkdir -p "$HOME/.pi/agent"
 
 # --- Make the agent home usable by any runtime uid ---------------------------

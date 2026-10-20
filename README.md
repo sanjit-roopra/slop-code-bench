@@ -86,8 +86,8 @@ reuses its expected model, so the clean check runs against the right arm.
 `--dry-run --resume DIR` prints slop-code's own resume preview (done vs still
 to run) without starting an agent; the Claude token is not read for it.
 
-`run.sh` sets `TMPDIR=/tmp` (SCB puts the agent HOME under `tempfile.gettempdir()`,
-and macOS' default TMPDIR breaks the container mounts). Exit codes: `0` clean
+`run.sh` sets `TMPDIR=$HOME/.cache/scb-tmp` (override with `SCB_TMPDIR`): VM-backed Docker
+on macOS shares only `$HOME`, so SCB's bind mounts from `/tmp` arrive empty. Exit codes: `0` clean
 run, `2` usage/preflight error, `3` DIRTY harness, `4` clean check UNKNOWN,
 otherwise slop-code's own exit code.
 

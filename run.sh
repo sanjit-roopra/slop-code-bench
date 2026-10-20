@@ -29,9 +29,21 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCB="$ROOT/vendor/slop-code-bench"
 cd "$ROOT"
 
-# SCB puts the agent HOME under tempfile.gettempdir(); macOS' default
-# /var/folders/... TMPDIR is not mountable the way SCB expects.
-export TMPDIR=/tmp
+# SCB bind-mounts host temp dirs (workspace, agent config, entry scripts) into
+# the containers. VM-backed Docker on macOS (Rancher Desktop, Colima) shares
+# only $HOME with the VM, so /tmp and /var/folders mounts arrive empty. Keep
+# SCB's temp dirs under $HOME. The container-side HOME is fixed at
+# /tmp/agent_home in the fork (agents/utils.py), independent of TMPDIR.
+SCB_TMPDIR="${SCB_TMPDIR:-$HOME/.cache/scb-tmp}"
+mkdir -p "$SCB_TMPDIR"
+export TMPDIR="$SCB_TMPDIR"
+
+# The Python docker SDK ignores CLI contexts (Rancher Desktop, Colima, OrbStack
+# put the socket outside /var/run/docker.sock), so resolve it from the active one.
+if [[ -z "${DOCKER_HOST:-}" ]] && command -v docker >/dev/null 2>&1; then
+  DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)"
+  [[ -n "$DOCKER_HOST" ]] && export DOCKER_HOST || unset DOCKER_HOST
+fi
 
 CC_VERSION="2.1.304"
 CC_TOKEN_FILE="${CC_TOKEN_FILE:-$HOME/.config/scb/cc_oauth_token}"
@@ -216,7 +228,8 @@ fi
 
 quote_cmd() { local out="" a; for a in "$@"; do out+="$(printf '%q' "$a") "; done; echo "${out% }"; }
 CMD_STR="$(quote_cmd "${CMD[@]}")"
-ENV_PREFIX="TMPDIR=/tmp"
+ENV_PREFIX="TMPDIR=$TMPDIR"
+[[ -n "${DOCKER_HOST:-}" ]] && ENV_PREFIX+=" DOCKER_HOST=$DOCKER_HOST"
 [[ -n "$SMOKE_ROOT" ]] && ENV_PREFIX+=" SCBENCH_PROBLEMS_PATH=$SMOKE_ROOT"
 
 PDT_SHA="$(grep -oE 'PDT_SHA = "[0-9a-f]+"' "$ROOT/templates/pidt.j2" 2>/dev/null | grep -oE '[0-9a-f]{7,}' || true)"
