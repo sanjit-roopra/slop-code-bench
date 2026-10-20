@@ -116,7 +116,7 @@ uv run --with pytest pytest -q
 | 2 | eval_coding skeleton: repo, submodule, `.gitignore`, `pyproject.toml`, layout | Done |
 | 3 | Arm configs, image templates, environment, prompts, per-arm run configs | Done (written, dry-run resolves for all arms) |
 | 4 | `run.sh` + manifest + clean check (+ smoke catalog, dry-run resolver, tests) | Done |
-| 5 | Real slop-code smoke: 1 problem, 2 checkpoints, per arm | Next (see `STATUS.md`) |
+| 5 | Real slop-code smoke: 1 problem, 2 checkpoints, per arm | Ran: cc-clean finished; pidt aborted in checkpoint 2, failed checkpoint 1 on a plan drift (see `STATUS.md`) |
 | 6 | `lite_under20` x1 per arm | Todo |
 | 7 | `analysis/compare.py`: paired per-checkpoint deltas, real $ and tokens | Todo |
 | 8 | `lite_under20` x3 per arm | Todo |
