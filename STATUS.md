@@ -80,9 +80,29 @@ So the fix worked for the failure it targeted. The remaining gaps are misreading
 
 Spend on pi-dev-team runs on 2026-10-20: $7.58 + about $7 (aborted pidt checkpoint 2) + $20.44 = about $35 notional, within the $100 cap.
 
+### pidt-opus: the same candidate on Claude Opus 5.5 (checkpoint 1 only)
+
+`SMOKE_CHECKPOINTS=1 ./run.sh pidt-opus smoke`, run dir `results/20261021-pidt-opus-smoke-r1`: finished, CLEAN (all calls `github-copilot/claude-opus-5.5`). Same model as the Claude Code arm, same pi-dev-team image as pidt-next, so only the harness differs from arm A.
+
+| | Claude Code, Opus 5.5 | pi-dev-team, Sol | pi-dev-team, Opus 5.5 |
+|---|---|---|---|
+| Tests (core / functionality / error) | 1/1, 23/27, 2/4 | 1/1, 16/27, 4/4 | 1/1, 16/27, 4/4 |
+| Wall time | 124 s | 5484 s | 2815 s |
+| Tokens (cache read / cache write / output) | 186k / 18k / 12k | 26.1M / 2.79M / 248k | 16.7M / 1.83M / 411k |
+| Notional cost | $0.44 | $12.07 | $20.69 |
+
+pi-dev-team on Opus fails the same 11 tests as on Sol, with the same wrong values, so the gap to Claude Code comes from the harness, not the model. Both plans turned the same two spec ambiguities into recorded plan decisions, and every later step honoured them:
+
+- "Each due job runs exactly once per invocation, even when it triggers more than once in the window." The tests expect one run per trigger.
+- "`JOB_ELIGIBLE.now_local` is `floor(--now)` ... (Plan decision; the request examples use `--now` equal to the trigger.)" The tests expect the trigger time.
+
+Claude Code, given the same spec, passed both groups of tests. The 4 glob tests fail in all three runs (for pi-dev-team on Opus with 4 events instead of 6 to 8, not with the mount error).
+
+Spend on pi-dev-team runs 2026-10-20/21: about $35 + $20.69 = about $56 notional.
+
 ## Next
 
 1. Decide whether to push pi-dev-team `request-as-spec` (`feb5afd`) and make it the pidt arm; the plan drift it targets is fixed (see pidt-next above).
 2. Cut pidt cost and time before step 6 (11 checkpoints): at about $7.58 and 79 min per checkpoint, `lite_under20` would be roughly $80+ notional and 14+ hours for one repeat.
-3. Optional: arm C `pidt-opus` smoke, to separate the harness effect from the model.
+3. Make /plan raise an ambiguity as an open question (or pick the reading the examples imply) instead of recording a decision that later reviews must honour; arm C showed this, not the model, is the gap.
 4. Record outcomes here and in `README.md`, then step 6.
