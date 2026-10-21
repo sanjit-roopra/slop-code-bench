@@ -152,3 +152,18 @@ The image adds ruff 0.17.1 and lizard 1.24.1 (exact pins, installed with `uv too
 The pi-dev-team SHA is still a placeholder (`TODO_PDT_SHA`, version `1.3.0-pdtpending-tools`) until the `DEV_TEAM_REVIEW=lean` commit lands on `request-as-spec`. `scripts/set_pdt_sha.sh <sha>` sets the template SHA and both arm versions in one step; then `scripts/build_pidt_local.sh agents/pidt-full.yaml` builds the shared image. `run.sh` warns on a dry run and refuses a real run while the placeholder is in place.
 
 New subset `heldout`: `file_merger`, `layered_config_synthesizer` and `dynamic_buffer`, each cut to checkpoints 1-2 (`HELDOUT_CHECKPOINTS`, default 2) through the same truncated-catalog mechanism as `smoke`. These problems were never used while tuning pi-dev-team (`file_backup` was, so it is left out). `smoke` now also takes a comma list in `SMOKE_PROBLEM`. `scripts/cost_guard.sh` accepts the whole run dir as `RUN` and sums the cost over all problems; because the two arms share an image, run them one after the other while a guard is active.
+
+## file_merger checkpoint 1: four arms on the same task (2026-10-21)
+
+All four runs are CLEAN. pi-dev-team is at `3b80fff` (DEV_TEAM_REVIEW switch); both pi-dev-team images now carry ruff 0.17.1 and lizard 1.24.1. The pi-dev-team runs were started on the `heldout` subset and stopped by hand after `file_merger` checkpoint 1, on the user's call (lean at the start of checkpoint 2, full as checkpoint 2 began). Plain pi and Claude Code ran `SMOKE_PROBLEM=file_merger SMOKE_CHECKPOINTS=1`.
+
+Program files only (`scripts/program_quality.py`):
+
+| Arm | Run dir | Tests | Cost | Time | Lines | Verbosity | Erosion | Clones | Lint/line | cc max |
+|---|---|---|---|---|---|---|---|---|---|---|
+| cc-clean (Opus 5.5) | `results/20261021-cc-clean-smoke-r1` | 44/46 | $0.90 | 212 s | 623 | 0.293 | 0.653 | 2.0% | 0.141 | 31 |
+| pi-stock (Sol) | `results/20261021-pi-stock-smoke-r4` | 45/46 | $0.25 | 427 s | 495 | 0.186 | 0.396 | 0% | 0.156 | 17 |
+| pidt-full (Sol) | `results/20261021-pidt-full-heldout-r1` | 45/46 | $18.73 | 7909 s | 544 | 0.116 | 0.440 | 0% | 0.125 | 17 |
+| pidt-lean (Sol) | `results/20261021-pidt-lean-heldout-r1` | 45/46 | $9.22 | 3909 s | 502 | 0.146 | 0.000 | 0% | 0.098 | 8 |
+
+Every arm fails `test_error_cases[spec_errors/bool_nonstandard_strict]`; Claude Code also fails `test_spec_correct_cases[spec_correct/cross_family_coercion]`. On this task the extra pi-dev-team time buys no tests. Lean is half the cost and time of full and gives the best code-quality numbers; it treats a lizard threshold breach as an error at every checkpoint, while full leaves lizard to the final review.
