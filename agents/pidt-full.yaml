@@ -10,7 +10,6 @@
 # version is the SCB image cache key (pi-<version>-<env name>). It carries the
 # pi-dev-team SHA: set it with scripts/set_pdt_sha.sh <sha>, which updates
 # PDT_SHA in templates/pidt-tools.j2 and this line in both arms together.
-# TODO: "pending" until the DEV_TEAM_REVIEW=lean commit lands; run.sh refuses a real run until then.
 #
 # Model is NOT set here: run.sh passes github-copilot/gpt-6.1-sol (runs/pidt-full_*.yaml for lite subsets).
 #
@@ -18,7 +17,7 @@
 # eval_coding repo root.
 type: pi
 binary: pi
-version: 1.3.0-pdtpending-tools
+version: 1.3.0-pdt3b80fff-tools
 docker_template: templates/pidt-tools.j2
 provider: github-copilot
 thinking: high

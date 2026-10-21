@@ -6,10 +6,14 @@
 #   SHA           full or short SHA (resolved to 40 chars in PDT_CHECKOUT)
 #   PDT_CHECKOUT  default ../../personal/pi-dev-team (relative to this repo)
 #
-# Writes PDT_SHA in templates/pidt-tools.j2 and "version: 1.3.0-pdt<sha7>-tools"
-# in agents/pidt-full.yaml and agents/pidt-lean.yaml (version is SCB's image cache
-# key, so both arms keep sharing one image). Then build it:
+# Writes PDT_SHA in templates/pidt-tools.j2, "version: 1.3.0-pdt<sha7>-tools" in
+# agents/pidt-full.yaml and "version: 1.3.0-pdt<sha7>-lean" in agents/pidt-lean.yaml.
+# version is SCB's image cache key. The two arms get separate image tags so that
+# scripts/cost_guard.sh (which stops containers by image) can guard each arm on its
+# own while both run at once. Build the full image, then the lean image FROM it:
 #   scripts/build_pidt_local.sh agents/pidt-full.yaml
+#   printf 'FROM slop-code:pi-1.3.0-pdt<sha7>-tools-python3.12\nLABEL scb.arm=pidt-lean\n' \
+#     | docker build -t slop-code:pi-1.3.0-pdt<sha7>-lean-python3.12 -
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,7 +32,9 @@ sed -i.bak -E "s/^\{%- set PDT_SHA = \"[^\"]*\" -%\}$/{%- set PDT_SHA = \"$sha\"
 rm -f "$TEMPLATE.bak"
 for a in "${AGENTS[@]}"; do
   grep -qE '^version: ' "$a" || die "no version line in $a"
-  sed -i.bak -E "s/^version: .*/version: 1.3.0-pdt${sha:0:7}-tools/" "$a"
+  suffix=tools
+  [[ "$a" == *pidt-lean.yaml ]] && suffix=lean
+  sed -i.bak -E "s/^version: .*/version: 1.3.0-pdt${sha:0:7}-$suffix/" "$a"
   rm -f "$a.bak"
 done
-echo "pidt-full/pidt-lean -> pi-dev-team $sha (version 1.3.0-pdt${sha:0:7}-tools)"
+echo "pidt-full/pidt-lean -> pi-dev-team $sha (versions 1.3.0-pdt${sha:0:7}-tools / -lean)"

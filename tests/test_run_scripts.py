@@ -308,9 +308,10 @@ def test_pidt_full_and_lean_differ_only_in_dev_team_review():
     lean = yaml.safe_load((ROOT / "agents" / "pidt-lean.yaml").read_text())
     assert full["env"].pop("DEV_TEAM_REVIEW") == "full"
     assert lean["env"].pop("DEV_TEAM_REVIEW") == "lean"
+    # Separate image tags, so cost_guard.sh can stop one arm without the other.
+    assert full.pop("version").removesuffix("-tools") == lean.pop("version").removesuffix("-lean")
     assert full == lean
     assert full["docker_template"] == "templates/pidt-tools.j2"
-    assert full["version"].endswith("-tools")
 
 
 def test_pidt_tools_template_pins_ruff_and_lizard():
@@ -327,16 +328,12 @@ def test_pidt_tools_sha_matches_arm_versions():
     text = (ROOT / "templates" / "pidt-tools.j2").read_text()
     m = re.search(r'PDT_SHA = "([^"]+)"', text)
     assert m
-    versions = {
+    full, lean = (
         yaml.safe_load((ROOT / "agents" / f"{a}.yaml").read_text())["version"]
         for a in ("pidt-full", "pidt-lean")
-    }
-    assert len(versions) == 1  # one shared image
-    if m.group(1).startswith("TODO"):
-        assert versions == {"1.3.0-pdtpending-tools"}
-    else:
-        assert re.fullmatch(r"[0-9a-f]{40}", m.group(1))
-        assert versions == {f"1.3.0-pdt{m.group(1)[:7]}-tools"}
+    )
+    assert re.fullmatch(r"[0-9a-f]{40}", m.group(1))
+    assert (full, lean) == (f"1.3.0-pdt{m.group(1)[:7]}-tools", f"1.3.0-pdt{m.group(1)[:7]}-lean")
 
 
 def test_set_pdt_sha_updates_template_and_both_arms(tmp_path: Path):
@@ -359,8 +356,8 @@ def test_set_pdt_sha_updates_template_and_both_arms(tmp_path: Path):
     )
     assert proc.returncode == 0, proc.stderr
     assert f'{{%- set PDT_SHA = "{sha}" -%}}' in (repo / "templates" / "pidt-tools.j2").read_text()
-    for a in ("pidt-full", "pidt-lean"):
-        assert yaml.safe_load((repo / "agents" / f"{a}.yaml").read_text())["version"] == f"1.3.0-pdt{sha[:7]}-tools"
+    for a, suffix in (("pidt-full", "tools"), ("pidt-lean", "lean")):
+        assert yaml.safe_load((repo / "agents" / f"{a}.yaml").read_text())["version"] == f"1.3.0-pdt{sha[:7]}-{suffix}"
     bad = subprocess.run(
         [str(repo / "scripts" / "set_pdt_sha.sh"), "deadbeef", str(pdt)], capture_output=True, text=True
     )
