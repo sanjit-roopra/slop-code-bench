@@ -164,7 +164,8 @@ case "$SUBSET" in
     fi
     [[ ${#CATALOG_PROBLEMS[@]} -gt 0 ]] || die "no problems for subset $SUBSET"
     [[ "$CATALOG_CHECKPOINTS" =~ ^[1-9][0-9]*$ ]] || die "checkpoint count must be a positive integer, got '$CATALOG_CHECKPOINTS'"
-    SMOKE_ROOT="$ROOT/results/.smoke-catalog/${catalog_name}-c${CATALOG_CHECKPOINTS}"
+    # One catalog per arm: two arms started together would otherwise rebuild the same dir at once.
+    SMOKE_ROOT="$ROOT/results/.smoke-catalog/${catalog_name}-c${CATALOG_CHECKPOINTS}-${ARM}"
     for p in "${CATALOG_PROBLEMS[@]}"; do PROBLEM_ARGS+=(--problem "$p"); done
     ;;
   lite_under20|lite)
