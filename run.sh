@@ -109,7 +109,7 @@ case "$ARM" in
     NEEDS_PI_AUTH=1
     ;;
   pidt-opus)
-    # Same agent + image as pidt; only the model differs (isolates the harness vs arm A).
+    # pi-dev-team on the same model as arm A, to separate the harness effect from the model.
     AGENT_YAML="$ROOT/agents/pidt-opus.yaml"
     [[ -f "$AGENT_YAML" ]] || AGENT_YAML="$ROOT/agents/pidt.yaml"
     MODEL="${PIDT_OPUS_MODEL:-github-copilot/copilot-claude-opus-5.5}"
