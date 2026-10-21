@@ -30,7 +30,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCB="$ROOT/vendor/slop-code-bench"
+SCB="$(cd "$ROOT/.." && pwd)"  # this fork; the eval lives in its harness_eval/
 cd "$ROOT"
 
 # SCB bind-mounts host temp dirs (workspace, agent config, entry scripts) into

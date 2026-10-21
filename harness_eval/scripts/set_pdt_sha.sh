@@ -4,7 +4,7 @@
 #   scripts/set_pdt_sha.sh SHA [PDT_CHECKOUT]
 #
 #   SHA           full or short SHA (resolved to 40 chars in PDT_CHECKOUT)
-#   PDT_CHECKOUT  default ../../personal/pi-dev-team (relative to this repo)
+#   PDT_CHECKOUT  default ../../../personal/pi-dev-team (relative to harness_eval/)
 #
 # Writes PDT_SHA in templates/pidt-tools.j2, "version: 1.3.0-pdt<sha7>-tools" in
 # agents/pidt-full.yaml, "version: 1.3.0-pdt<sha7>-lean" in agents/pidt-lean.yaml and
@@ -20,7 +20,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SHA_IN="${1:?usage: scripts/set_pdt_sha.sh SHA [PDT_CHECKOUT]}"
-PDT_CHECKOUT="${2:-$ROOT/../../personal/pi-dev-team}"
+PDT_CHECKOUT="${2:-$ROOT/../../../personal/pi-dev-team}"
 TEMPLATE="$ROOT/templates/pidt-tools.j2"
 AGENTS=("$ROOT/agents/pidt-full.yaml" "$ROOT/agents/pidt-lean.yaml" "$ROOT/agents/pidt-lean-fast.yaml")
 

@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     if not src.is_dir():
         print(
             f"make_smoke_problem: {src} not found; install the catalog first "
-            "(uv run --project vendor/slop-code-bench slop-code sync)",
+            "(uv run --project .. slop-code sync)",
             file=sys.stderr,
         )
         return 2

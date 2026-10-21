@@ -1,4 +1,4 @@
-# eval_coding
+# harness_eval
 
 A/B evaluation of coding-agent harnesses on [SlopCodeBench](https://github.com/gabeorlanski/slop-code-bench) (SCB).
 
@@ -8,10 +8,12 @@ against a fixed baseline and see whether pass rates, cost and tokens moved.
 The baseline is stock Claude Code with nothing installed, so any difference
 comes from the harness and not from leaked user configuration.
 
-SCB is vendored as a submodule at `vendor/slop-code-bench`, pointing at the
-fork `sanjit-roopra/slop-code-bench`, branch `harness-eval` (upstream
-`31ceea3` plus patches for Copilot credentials, tool-result cost accounting
-and the extra models/providers).
+The eval lives in `harness_eval/` of the fork `sanjit-roopra/slop-code-bench`,
+branch `harness-eval` (upstream `31ceea3` plus patches for Copilot credentials,
+tool-result cost accounting and the extra models/providers), and runs against
+the SCB code in the fork's root. Until 2026-10-21 it was a separate repo,
+eval_coding, with the fork as a submodule; its history is merged in here.
+Run every command below from `harness_eval/`.
 
 ## Arms
 
@@ -48,11 +50,11 @@ the SCB model catalog, not money spent.
 
 ## Running
 
-Prerequisites: Docker running, `uv`, `jq`, the submodule checked out
-(`git submodule update --init`), and the SCB problem catalog installed once:
+Prerequisites: Docker running, `uv`, `jq`, and the SCB problem catalog
+installed once:
 
 ```sh
-uv run --project vendor/slop-code-bench slop-code sync
+uv run --project .. slop-code sync
 ```
 
 Credentials (never printed, never committed):

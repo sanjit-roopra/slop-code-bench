@@ -121,7 +121,7 @@ def test_run_sh_dry_run_resolves_pidt_smoke():
     assert not list((ROOT / "results").glob("*-pidt-smoke-r7"))
 
 
-_SCB_PY = ["uv", "run", "--quiet", "--project", str(ROOT / "vendor" / "slop-code-bench"), "python"]
+_SCB_PY = ["uv", "run", "--quiet", "--project", str(ROOT.parent), "python"]
 _needs_uv = pytest.mark.skipif(shutil.which("uv") is None, reason="uv not installed")
 
 # Model id each arm's run config must resolve to on its own (no --model).

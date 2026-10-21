@@ -75,7 +75,7 @@ Before claiming a fix works, prove it on checkpoint 1 only (`SMOKE_CHECKPOINTS=1
 - Copilot bills by premium requests with per-model multipliers, not tokens; the dollar figures here are notional.
 - Never print or commit secrets. The Claude Code token is read only into the environment at run time from `~/.config/scb/cc_oauth_token`. Copilot auth reaches the container only through the SCB file credential (`configs/providers.yaml`, fork patch `67c6cf0` copies just the `github-copilot` entry of `~/.pi/agent/auth.json`).
 - A filtered copy of the Copilot `auth.json` is in the old session's scratchpad (`/private/tmp/claude-501/-Users-sanjit-roopra-git-dedalus-eval-coding/bcd571d8-cc6a-4b98-bafc-ee9dfad7d374/scratchpad/smoke1/agent/auth.json`); delete it.
-- Pushing is outward-facing: the fork `vendor/slop-code-bench` (branch `harness-eval`) is pushed up to `0a5f32c`; pi-dev-team `request-as-spec` is not pushed.
+- Pushing is outward-facing. Since 2026-10-21 this eval lives in `harness_eval/` of the fork (branch `harness-eval`, pushed); pi-dev-team `request-as-spec` is pushed as a branch, not merged.
 
 ## Reporting to the user
 

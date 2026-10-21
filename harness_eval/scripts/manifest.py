@@ -18,6 +18,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import os
 import platform
 import re
 import socket
@@ -26,7 +27,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCB = ROOT / "vendor" / "slop-code-bench"
+SCB = ROOT.parent  # this fork; the eval lives in its harness_eval/
 MANIFEST_NAME = "manifest.json"
 
 _SHA_PATTERNS = (
@@ -238,7 +239,7 @@ def model_info(model: str) -> dict[str, object]:
             continue
         data = _load_yaml(path)
         if path.stem == name or name in (data.get("aliases") or []):
-            info["catalog_file"] = str(path.relative_to(ROOT))
+            info["catalog_file"] = os.path.relpath(path, ROOT)
             info["internal_name"] = data.get("internal_name")
             info["provider_slugs"] = data.get("provider_slugs") or {}
             info["pricing"] = data.get("pricing")

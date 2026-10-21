@@ -22,7 +22,7 @@
 # Model is NOT set here: run.sh passes github-copilot/gpt-6.1-sol (runs/pidt-lean-fast_*.yaml for lite subsets).
 #
 # docker_template is resolved relative to the CWD: run slop-code from the
-# eval_coding repo root.
+# harness_eval/ directory.
 type: pi
 binary: pi
 version: 1.3.0-pdt44b3826-fast

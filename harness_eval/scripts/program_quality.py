@@ -59,7 +59,7 @@ mismatch.
 
 Run inside SCB's environment (it imports ``slop_code``)::
 
-    uv run --project vendor/slop-code-bench python scripts/program_quality.py
+    uv run --project .. python scripts/program_quality.py
 """
 
 from __future__ import annotations

@@ -5,7 +5,7 @@
 #   scripts/build_pidt_local.sh [AGENT_YAML] [PDT_CHECKOUT]
 #
 #   AGENT_YAML    default agents/pidt-next.yaml
-#   PDT_CHECKOUT  default ../../personal/pi-dev-team (relative to this repo)
+#   PDT_CHECKOUT  default ../../../personal/pi-dev-team (relative to harness_eval/)
 #
 # SCB builds an agent image only when its tag is missing (build_image_from_str), and the
 # tag comes from the agent config's version. The image built here gets that tag, so
@@ -20,8 +20,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENT_YAML="${1:-$ROOT/agents/pidt-next.yaml}"
-PDT_CHECKOUT="${2:-$ROOT/../../personal/pi-dev-team}"
-SCB="${SCB:-$ROOT/vendor/slop-code-bench}"
+PDT_CHECKOUT="${2:-$ROOT/../../../personal/pi-dev-team}"
+SCB="${SCB:-$(cd "$ROOT/.." && pwd)}"
 ENV_NAME="python3.12"
 BASE_IMAGE="slop-code:pi-1.3.0-pdt3c34bf5-$ENV_NAME"
 

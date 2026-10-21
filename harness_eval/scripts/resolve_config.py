@@ -5,7 +5,7 @@ Takes the same arguments run.sh passes to ``slop-code run`` and goes through
 SCB's own loaders: run config + overrides, environment spec, model catalog
 lookup, agent config validation and the docker image name. No credentials are
 resolved, no container is built, no model is called. Run it inside the SCB
-project env (``uv run --project vendor/slop-code-bench python ...``).
+project env (``uv run --project .. python ...``).
 """
 
 from __future__ import annotations
