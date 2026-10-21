@@ -401,7 +401,7 @@ def test_run_sh_dry_run_resolves_review_arms_on_heldout(arm: str):
     assert f"-{arm}-heldout-r7" in proc.stdout
     assert "".join(f" --problem {p}" for p in HELDOUT) in proc.stdout
     assert "file_backup" not in proc.stdout
-    assert "SCBENCH_PROBLEMS_PATH=" in proc.stdout and "/.smoke-catalog/heldout-c2 " in proc.stdout
+    assert "SCBENCH_PROBLEMS_PATH=" in proc.stdout and f"/.smoke-catalog/heldout-c2-{arm} " in proc.stdout
     assert f"agents/{arm}.yaml" in proc.stdout
     assert "--model github-copilot/gpt-6.1-sol" in proc.stdout
     assert "expect model: github-copilot/gpt-6.1-sol" in proc.stdout
@@ -421,7 +421,7 @@ def test_run_sh_smoke_takes_a_problem_list():
     )
     assert proc.returncode == 0, proc.stderr
     assert "--problem file_backup --problem xjq" in proc.stdout
-    assert "/.smoke-catalog/file_backup+xjq-c1 " in proc.stdout
+    assert "/.smoke-catalog/file_backup+xjq-c1-pi-stock " in proc.stdout
 
 
 def test_heldout_problems_have_two_checkpoints():
