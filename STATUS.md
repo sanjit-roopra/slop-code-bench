@@ -121,3 +121,24 @@ Spend on pi-dev-team runs 2026-10-20/21: about $35 + $20.69 = about $56 notional
 The mechanism worked as written: the plan lists Q1 (one run per job or per trigger) and Q2 (`now_local` = `--now` or trigger time) as unresolved, says the examples do not decide them, and marks no "Plan decision". But the provisional reading it planned is the same wrong one for both, nobody resolves an open question in a non-interactive run, and the same 11 tests fail with the same values (`daily_multi_trigger` 15 != 43 events; `once_due` `now_local` 03:30 != 04:00). Score unchanged; the lower time and cost are within run-to-run variation until repeated.
 
 Spend on pi-dev-team runs 2026-10-20/21: about $56 + $8.09 = about $64 notional.
+
+### pi-stock on Sol (checkpoint 1, 3 repeats) and the Sol experiments
+
+Program-only quality from `scripts/program_quality.py` (tests, `.claude/` and `plans/` excluded).
+
+| Run | Tests | Cost | Time | Lines | Verbosity | Erosion | Clones | Lint/line | cc_max |
+|---|---|---|---|---|---|---|---|---|---|
+| `20261021-pi-stock-smoke-r1` | 28/32 | $0.19 | 276 s | 298 | 0.32 | 0.74 | 0% | 0.22 | 26 |
+| `20261021-pi-stock-smoke-r2` | 28/32 | $0.20 | 293 s | 323 | 0.29 | 0.71 | 0% | 0.18 | 20 |
+| `20261021-pi-stock-smoke-r3` | 28/32 | $0.17 | 276 s | 303 | 0.28 | 0.76 | 0% | 0.22 | 27 |
+| cc-clean (Opus 5.5) | 26/32 | $0.44 | 124 s | 400 | 0.34 | 0.56 | 1.9% | 0.10 | 19 |
+| pidt-next @ 0958eac (Sol) | 21/32 | $8.09 | 4082 s | 318 | 0.35 | 0.71 | 0% | 0.28 | 31 |
+
+All three pi-stock runs are CLEAN and pass every non-glob test (28/32 is the ceiling; the 4 glob tests fail for every arm). Plain pi on Sol beats both Claude Code on Opus and pi-dev-team on Sol on tests, at about 1/40 of pi-dev-team's cost; its code quality is no better (erosion 0.71-0.76, one large function).
+
+Supporting experiments (scratchpad `sol/`, not in the repo):
+
+- E1, spec probe: Sol with no harness, given the checkpoint 1 spec and the hidden cases' inputs, predicts the right reading of both ambiguous points in 10/10 samples ($0.27 total). pi-dev-team's plan and gates flip a reading the model gets right on its own.
+- E0, hand refactor ($0): splitting Sol's `load_schedule` (radon cc 31) to cc <= 10 with one `require()` validation helper keeps 21/32 and moves erosion 0.71 -> 0.00, verbosity 0.35 -> 0.13, lint/line 0.28 -> 0.07. ruff C901 alone undercounts (20 vs radon 31).
+
+Spend 2026-10-21 after these: about $65.6 notional.
