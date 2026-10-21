@@ -19,6 +19,7 @@ Compare clean Claude Code (arm A) with pi + pi-dev-team (https://github.com/sanj
 | `pidt` | pi 1.3.0 + pi-dev-team `3c34bf5` (main) | `github-copilot/gpt-6.1-sol` | `agents/pidt.yaml` |
 | `pidt-next` | pi 1.3.0 + pi-dev-team `feb5afd` (candidate) | `github-copilot/gpt-6.1-sol` | `agents/pidt-next.yaml` |
 | `pidt-opus` | pi 1.3.0 + pi-dev-team `feb5afd` | `github-copilot/claude-opus-5.5` | `agents/pidt-opus.yaml` |
+| `pidt-full` / `pidt-lean` | pi 1.3.0 + pi-dev-team (SHA pending, `scripts/set_pdt_sha.sh`) + ruff/lizard, `DEV_TEAM_REVIEW=full` / `lean` | `github-copilot/gpt-6.1-sol` | `agents/pidt-{full,lean}.yaml` |
 
 ## Results so far (file_backup)
 

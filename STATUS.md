@@ -142,3 +142,13 @@ Supporting experiments (scratchpad `sol/`, not in the repo):
 - E0, hand refactor ($0): splitting Sol's `load_schedule` (radon cc 31) to cc <= 10 with one `require()` validation helper keeps 21/32 and moves erosion 0.71 -> 0.00, verbosity 0.35 -> 0.13, lint/line 0.28 -> 0.07. ruff C901 alone undercounts (20 vs radon 31).
 
 Spend 2026-10-21 after these: about $65.6 notional.
+
+### Next experiment: pidt-full vs pidt-lean on the heldout subset (set up, not run)
+
+Two Sol arms that differ only in pi-dev-team's review depth, to pick between the normal and the lean workflow. `agents/pidt-full.yaml` and `agents/pidt-lean.yaml` are identical except `env.DEV_TEAM_REVIEW` (`full` or `lean`); both use `templates/pidt-tools.j2`, the same `version` (so one shared image), `github-copilot/gpt-6.1-sol`, `prompts/pidt.jinja` and the pi environment. `run.sh`, `scripts/check_clean.py` and `runs/pidt-{full,lean}_{lite,lite_under20}.yaml` know both arms.
+
+The image adds ruff 0.17.1 and lizard 1.24.1 (exact pins, installed with `uv tool install` into `/opt/uv-tools`, entry points in `/usr/local/bin`). The SCB base image has neither, so in every earlier pi-dev-team run the static-analysis pre-pass logged "ruff not installed" and lizard never ran. A throwaway build from `0958eac` (`slop-code:pi-1.3.0-pdt0958eac-toolstest-python3.12`) showed both on PATH for a non-agent uid under `bash -l`. `scripts/build_pidt_local.sh` now copies the template's tools block into local builds, so a locally built image matches the template.
+
+The pi-dev-team SHA is still a placeholder (`TODO_PDT_SHA`, version `1.3.0-pdtpending-tools`) until the `DEV_TEAM_REVIEW=lean` commit lands on `request-as-spec`. `scripts/set_pdt_sha.sh <sha>` sets the template SHA and both arm versions in one step; then `scripts/build_pidt_local.sh agents/pidt-full.yaml` builds the shared image. `run.sh` warns on a dry run and refuses a real run while the placeholder is in place.
+
+New subset `heldout`: `file_merger`, `layered_config_synthesizer` and `dynamic_buffer`, each cut to checkpoints 1-2 (`HELDOUT_CHECKPOINTS`, default 2) through the same truncated-catalog mechanism as `smoke`. These problems were never used while tuning pi-dev-team (`file_backup` was, so it is left out). `smoke` now also takes a comma list in `SMOKE_PROBLEM`. `scripts/cost_guard.sh` accepts the whole run dir as `RUN` and sums the cost over all problems; because the two arms share an image, run them one after the other while a guard is active.

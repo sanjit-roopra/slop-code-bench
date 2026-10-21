@@ -8,6 +8,9 @@
 # for ARM_YAML is alive. SCB writes usage only when a checkpoint ends, so the cost
 # check sees finished checkpoints only; the wall-clock cap is the real limit
 # inside a checkpoint (observed: $8-16 per hour for pi-dev-team).
+# RUN may also be the run dir itself: the cost then sums every problem in it.
+# pidt-full and pidt-lean share one IMAGE: a STOP stops containers of both, so run
+# those two arms one after the other, not side by side, while a guard is active.
 RUN=${RUN:?}
 ARM_YAML=${ARM_YAML:?}
 IMAGE=${IMAGE:?}
@@ -24,7 +27,11 @@ while pgrep -f "slop-code run --agent .*${ARM_YAML}" >/dev/null; do
   cost=$(python3 - "$RUN" <<'PY'
 import glob, json, sys
 total = 0.0
-for f in glob.glob(sys.argv[1] + "/checkpoint_*/inference_result.json"):
+# RUN may be one problem dir or a whole run dir (several problems, e.g. heldout).
+files = glob.glob(sys.argv[1] + "/checkpoint_*/inference_result.json") + glob.glob(
+    sys.argv[1] + "/*/checkpoint_*/inference_result.json"
+)
+for f in files:
     try:
         total += json.load(open(f))["usage"]["cost"]
     except Exception:

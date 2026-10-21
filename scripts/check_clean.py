@@ -132,6 +132,8 @@ ARMS = {
     "pidt": {"kind": "pi", "dev_team": True},
     "pidt-next": {"kind": "pi", "dev_team": True},
     "pidt-opus": {"kind": "pi", "dev_team": True},
+    "pidt-full": {"kind": "pi", "dev_team": True},
+    "pidt-lean": {"kind": "pi", "dev_team": True},
     "pi-stock": {"kind": "pi", "dev_team": False},
 }
 

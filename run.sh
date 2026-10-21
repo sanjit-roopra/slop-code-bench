@@ -3,8 +3,11 @@
 #
 #   ./run.sh [options] ARM SUBSET [REPEAT]
 #
-#   ARM     cc-clean | pidt | pidt-next | pidt-opus | pi-stock
-#   SUBSET  smoke | lite_under20 | lite | full
+#   ARM     cc-clean | pidt | pidt-next | pidt-opus | pidt-full | pidt-lean | pi-stock
+#   SUBSET  smoke | heldout | lite_under20 | lite | full
+#           smoke   = SMOKE_PROBLEM (comma list allowed), first SMOKE_CHECKPOINTS checkpoints
+#           heldout = file_merger, layered_config_synthesizer, dynamic_buffer,
+#                     first HELDOUT_CHECKPOINTS checkpoints (default 2)
 #   REPEAT  repeat index, default 1 (output dir suffix -r<REPEAT>)
 #
 # Options:
@@ -16,7 +19,8 @@
 #   -h | --help      this help
 #
 # Env overrides: CC_MODEL, PIDT_MODEL, PIDT_OPUS_MODEL, PI_STOCK_MODEL,
-#   SMOKE_PROBLEM (default file_backup), SMOKE_CHECKPOINTS (default 2),
+#   SMOKE_PROBLEM (default file_backup; comma list allowed), SMOKE_CHECKPOINTS (default 2),
+#   HELDOUT_CHECKPOINTS (default 2),
 #   SCBENCH_PROBLEMS_SRC (installed catalog, default ~/.cache/scbench/problems),
 #   CC_TOKEN_FILE (default ~/.config/scb/cc_oauth_token), PI_AUTH_FILE (default ~/.pi/agent/auth.json).
 #
@@ -50,12 +54,15 @@ CC_TOKEN_FILE="${CC_TOKEN_FILE:-$HOME/.config/scb/cc_oauth_token}"
 PI_AUTH_FILE="${PI_AUTH_FILE:-$HOME/.pi/agent/auth.json}"
 SMOKE_PROBLEM="${SMOKE_PROBLEM:-file_backup}"
 SMOKE_CHECKPOINTS="${SMOKE_CHECKPOINTS:-2}"
+HELDOUT_CHECKPOINTS="${HELDOUT_CHECKPOINTS:-2}"
+# Held-out dev set for pi-dev-team variants: never used while tuning (file_backup was).
+HELDOUT_PROBLEMS=(file_merger layered_config_synthesizer dynamic_buffer)
 SCBENCH_PROBLEMS_SRC="${SCBENCH_PROBLEMS_SRC:-$HOME/.cache/scbench/problems}"
 THINKING="high"
 
 die() { echo "run.sh: $*" >&2; exit 2; }
 warn() { echo "run.sh: WARNING: $*" >&2; }
-usage() { sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,29p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 DRY_RUN=0
 WORKERS=1
@@ -117,6 +124,15 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
+  pidt-full|pidt-lean)
+    # pi-dev-team with DEV_TEAM_REVIEW=full | lean: the two agent yamls differ only in
+    # that env var and share one image (templates/pidt-tools.j2, adds ruff + lizard).
+    AGENT_YAML="$ROOT/agents/$ARM.yaml"
+    MODEL="${PIDT_MODEL:-github-copilot/gpt-6.1-sol}"
+    PROMPT="$ROOT/prompts/pidt.jinja"
+    ENVIRONMENT="$ENV_PI"
+    NEEDS_PI_AUTH=1
+    ;;
   pi-stock)
     AGENT_YAML="$ROOT/agents/pi-stock.yaml"
     MODEL="${PI_STOCK_MODEL:-github-copilot/gpt-6.1-sol}"
@@ -124,26 +140,39 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
-  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-next|pidt-opus|pi-stock)" ;;
+  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-next|pidt-opus|pidt-full|pidt-lean|pi-stock)" ;;
 esac
 
 # --- Subset -> problem selection ---------------------------------------------
 RUN_CONFIG=""
 PROBLEM_ARGS=()
 SMOKE_ROOT=""
+CATALOG_PROBLEMS=()
+CATALOG_CHECKPOINTS=""
 case "$SUBSET" in
-  smoke)
-    # slop-code has no checkpoint-limit flag: build a one-problem catalog with
-    # only the first $SMOKE_CHECKPOINTS checkpoints and point SCBENCH_PROBLEMS_PATH at it.
-    SMOKE_ROOT="$ROOT/results/.smoke-catalog/${SMOKE_PROBLEM}-c${SMOKE_CHECKPOINTS}"
-    PROBLEM_ARGS=(--problem "$SMOKE_PROBLEM")
+  smoke|heldout)
+    # slop-code has no checkpoint-limit flag: build a catalog of the chosen problems,
+    # each cut to its first N checkpoints, and point SCBENCH_PROBLEMS_PATH at it.
+    if [[ "$SUBSET" == smoke ]]; then
+      IFS=, read -ra CATALOG_PROBLEMS <<< "$SMOKE_PROBLEM"
+      CATALOG_CHECKPOINTS="$SMOKE_CHECKPOINTS"
+      catalog_name="${SMOKE_PROBLEM//,/+}"
+    else
+      CATALOG_PROBLEMS=("${HELDOUT_PROBLEMS[@]}")
+      CATALOG_CHECKPOINTS="$HELDOUT_CHECKPOINTS"
+      catalog_name="heldout"
+    fi
+    [[ ${#CATALOG_PROBLEMS[@]} -gt 0 ]] || die "no problems for subset $SUBSET"
+    [[ "$CATALOG_CHECKPOINTS" =~ ^[1-9][0-9]*$ ]] || die "checkpoint count must be a positive integer, got '$CATALOG_CHECKPOINTS'"
+    SMOKE_ROOT="$ROOT/results/.smoke-catalog/${catalog_name}-c${CATALOG_CHECKPOINTS}"
+    for p in "${CATALOG_PROBLEMS[@]}"; do PROBLEM_ARGS+=(--problem "$p"); done
     ;;
   lite_under20|lite)
     RUN_CONFIG="$ROOT/runs/${ARM}_${SUBSET}.yaml"
     [[ -f "$RUN_CONFIG" ]] || RUN_CONFIG="$SCB/configs/runs/${SUBSET}.yaml"
     ;;
   full) ;;  # all problems in the installed catalog
-  *) die "unknown SUBSET '$SUBSET' (smoke|lite_under20|lite|full)" ;;
+  *) die "unknown SUBSET '$SUBSET' (smoke|heldout|lite_under20|lite|full)" ;;
 esac
 
 # --- Output dir ---------------------------------------------------------------
@@ -242,6 +271,10 @@ ENV_PREFIX="TMPDIR=$TMPDIR"
 
 PDT_TEMPLATE="$ROOT/$(sed -n 's/^docker_template: *//p' "$AGENT_YAML" 2>/dev/null)"
 PDT_SHA="$(grep -oE 'PDT_SHA = "[0-9a-f]+"' "$PDT_TEMPLATE" 2>/dev/null | grep -oE '[0-9a-f]{7,}' || true)"
+if [[ -z "$PDT_SHA" ]] && grep -q 'PDT_SHA = "TODO' "$PDT_TEMPLATE" 2>/dev/null; then
+  PDT_SHA="TODO (placeholder in ${PDT_TEMPLATE#$ROOT/}; set it with scripts/set_pdt_sha.sh)"
+  [[ $DRY_RUN -eq 1 ]] && warn "pi-dev-team SHA not set yet: $PDT_SHA" || die "pi-dev-team SHA not set: $PDT_SHA"
+fi
 
 echo "arm:         $ARM"
 echo "subset:      $SUBSET (repeat $REPEAT)"
@@ -250,7 +283,7 @@ echo "model:       $MODEL  thinking=$THINKING"
 echo "prompt:      $PROMPT"
 echo "environment: $ENVIRONMENT"
 [[ -n "$RUN_CONFIG" ]] && echo "run config:  $RUN_CONFIG"
-[[ -n "$SMOKE_ROOT" ]] && echo "smoke:       $SMOKE_PROBLEM, first $SMOKE_CHECKPOINTS checkpoints -> $SMOKE_ROOT"
+[[ -n "$SMOKE_ROOT" ]] && echo "problems:    $(IFS=,; echo "${CATALOG_PROBLEMS[*]}"), first $CATALOG_CHECKPOINTS checkpoints -> $SMOKE_ROOT"
 [[ "$ARM" == pidt* ]] && echo "pi-dev-team: ${PDT_SHA:-unknown}"
 echo "credentials: $cred_status"
 echo "run dir:     $RUN_DIR"
@@ -260,7 +293,7 @@ MANIFEST_ARGS=(write --run-dir "$RUN_DIR" --arm "$ARM" --subset "$SUBSET" --repe
   --agent "$AGENT_YAML" --model "$MODEL" --prompt "$PROMPT" --environment "$ENVIRONMENT"
   --thinking "$THINKING" --command "$ENV_PREFIX $CMD_STR")
 [[ -n "$RUN_CONFIG" ]] && MANIFEST_ARGS+=(--run-config "$RUN_CONFIG")
-[[ "$SUBSET" == smoke ]] && MANIFEST_ARGS+=(--problem "$SMOKE_PROBLEM" --smoke-checkpoints "$SMOKE_CHECKPOINTS")
+[[ -n "$SMOKE_ROOT" ]] && MANIFEST_ARGS+=(${PROBLEM_ARGS[@]+"${PROBLEM_ARGS[@]}"} --smoke-checkpoints "$CATALOG_CHECKPOINTS")
 PY=(uv run --quiet --project "$SCB" python)
 
 # Model id the agent must report at run time (CC init model / pi provider/model);
@@ -302,12 +335,17 @@ fi
 
 # --- Run ------------------------------------------------------------------------
 if [[ -n "$SMOKE_ROOT" ]]; then
-  if [[ ! -d "$SCBENCH_PROBLEMS_SRC/$SMOKE_PROBLEM" ]]; then
-    echo "run.sh: installing SCB problem catalog (slop-code sync)"
-    env -u SCBENCH_PROBLEMS_PATH uv run --project "$SCB" slop-code sync
-  fi
-  "${PY[@]}" scripts/make_smoke_problem.py --src-root "$SCBENCH_PROBLEMS_SRC" \
-    --dest-root "$SMOKE_ROOT" --problem "$SMOKE_PROBLEM" --checkpoints "$SMOKE_CHECKPOINTS" >/dev/null
+  for p in "${CATALOG_PROBLEMS[@]}"; do
+    if [[ ! -d "$SCBENCH_PROBLEMS_SRC/$p" ]]; then
+      echo "run.sh: installing SCB problem catalog (slop-code sync)"
+      env -u SCBENCH_PROBLEMS_PATH uv run --project "$SCB" slop-code sync
+      break
+    fi
+  done
+  for p in "${CATALOG_PROBLEMS[@]}"; do
+    "${PY[@]}" scripts/make_smoke_problem.py --src-root "$SCBENCH_PROBLEMS_SRC" \
+      --dest-root "$SMOKE_ROOT" --problem "$p" --checkpoints "$CATALOG_CHECKPOINTS" >/dev/null
+  done
   export SCBENCH_PROBLEMS_PATH="$SMOKE_ROOT"
 fi
 

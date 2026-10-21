@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -128,6 +130,8 @@ _RUN_CONFIG_INTERNAL_NAMES = {
     "pidt": "gpt-6.1-sol",
     "pi-stock": "gpt-6.1-sol",
     "pidt-opus": "claude-opus-5.5",  # Copilot id, not the Anthropic claude-opus-5-5
+    "pidt-full": "gpt-6.1-sol",
+    "pidt-lean": "gpt-6.1-sol",
 }
 
 
@@ -292,3 +296,141 @@ def test_run_sh_resume_requires_manifest(tmp_path: Path):
     )
     assert proc.returncode == 2
     assert "no manifest.json" in proc.stderr
+
+
+# --- pidt-full / pidt-lean arms and the heldout subset ------------------------
+
+HELDOUT = ["file_merger", "layered_config_synthesizer", "dynamic_buffer"]
+
+
+def test_pidt_full_and_lean_differ_only_in_dev_team_review():
+    full = yaml.safe_load((ROOT / "agents" / "pidt-full.yaml").read_text())
+    lean = yaml.safe_load((ROOT / "agents" / "pidt-lean.yaml").read_text())
+    assert full["env"].pop("DEV_TEAM_REVIEW") == "full"
+    assert lean["env"].pop("DEV_TEAM_REVIEW") == "lean"
+    assert full == lean
+    assert full["docker_template"] == "templates/pidt-tools.j2"
+    assert full["version"].endswith("-tools")
+
+
+def test_pidt_tools_template_pins_ruff_and_lizard():
+    text = (ROOT / "templates" / "pidt-tools.j2").read_text()
+    assert re.search(r'RUFF_VERSION = "\d+\.\d+\.\d+"', text)
+    assert re.search(r'LIZARD_VERSION = "\d+\.\d+\.\d+"', text)
+    assert "ruff=={{ RUFF_VERSION }}" in text and "lizard=={{ LIZARD_VERSION }}" in text
+    # build_pidt_local.sh copies the block between these markers into local builds.
+    assert text.count("# --- tools:begin") == 1 and text.count("# --- tools:end") == 1
+    assert text.index("# --- tools:begin") < text.index("# --- tools:end")
+
+
+def test_pidt_tools_sha_matches_arm_versions():
+    text = (ROOT / "templates" / "pidt-tools.j2").read_text()
+    m = re.search(r'PDT_SHA = "([^"]+)"', text)
+    assert m
+    versions = {
+        yaml.safe_load((ROOT / "agents" / f"{a}.yaml").read_text())["version"]
+        for a in ("pidt-full", "pidt-lean")
+    }
+    assert len(versions) == 1  # one shared image
+    if m.group(1).startswith("TODO"):
+        assert versions == {"1.3.0-pdtpending-tools"}
+    else:
+        assert re.fullmatch(r"[0-9a-f]{40}", m.group(1))
+        assert versions == {f"1.3.0-pdt{m.group(1)[:7]}-tools"}
+
+
+def test_set_pdt_sha_updates_template_and_both_arms(tmp_path: Path):
+    repo = tmp_path / "eval"
+    for rel in ("scripts/set_pdt_sha.sh", "templates/pidt-tools.j2", "agents/pidt-full.yaml", "agents/pidt-lean.yaml"):
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / rel, repo / rel)
+    pdt = tmp_path / "pdt"
+    subprocess.run(["git", "init", "-q", str(pdt)], check=True)
+    subprocess.run(
+        ["git", "-C", str(pdt), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+         "--allow-empty", "-m", "x"],
+        check=True,
+    )
+    sha = subprocess.run(
+        ["git", "-C", str(pdt), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    proc = subprocess.run(
+        [str(repo / "scripts" / "set_pdt_sha.sh"), sha[:9], str(pdt)], capture_output=True, text=True
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert f'{{%- set PDT_SHA = "{sha}" -%}}' in (repo / "templates" / "pidt-tools.j2").read_text()
+    for a in ("pidt-full", "pidt-lean"):
+        assert yaml.safe_load((repo / "agents" / f"{a}.yaml").read_text())["version"] == f"1.3.0-pdt{sha[:7]}-tools"
+    bad = subprocess.run(
+        [str(repo / "scripts" / "set_pdt_sha.sh"), "deadbeef", str(pdt)], capture_output=True, text=True
+    )
+    assert bad.returncode == 2
+
+
+@pytest.mark.parametrize("arm", ["pidt-full", "pidt-lean"])
+def test_check_clean_knows_pidt_review_arms(arm: str):
+    import check_clean
+
+    assert check_clean.ARMS[arm] == {"kind": "pi", "dev_team": True}
+
+
+@pytest.mark.parametrize("args", [["pidt-lean", "nope"], ["pidt-mid", "heldout"]])
+def test_run_sh_rejects_unknown_review_arm_or_subset(args):
+    proc = subprocess.run([str(ROOT / "run.sh"), "--dry-run", *args], capture_output=True, text=True)
+    assert proc.returncode == 2
+
+
+def test_run_sh_rejects_bad_heldout_checkpoints():
+    proc = subprocess.run(
+        [str(ROOT / "run.sh"), "--dry-run", "pidt-lean", "heldout"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "HELDOUT_CHECKPOINTS": "0"},
+    )
+    assert proc.returncode == 2
+    assert "positive integer" in proc.stderr
+
+
+@_needs_uv
+@pytest.mark.parametrize("arm", ["pidt-full", "pidt-lean"])
+def test_run_sh_dry_run_resolves_review_arms_on_heldout(arm: str):
+    proc = subprocess.run(
+        [str(ROOT / "run.sh"), "--dry-run", arm, "heldout", "7"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert f"-{arm}-heldout-r7" in proc.stdout
+    assert "".join(f" --problem {p}" for p in HELDOUT) in proc.stdout
+    assert "file_backup" not in proc.stdout
+    assert "SCBENCH_PROBLEMS_PATH=" in proc.stdout and "/.smoke-catalog/heldout-c2 " in proc.stdout
+    assert f"agents/{arm}.yaml" in proc.stdout
+    assert "--model github-copilot/gpt-6.1-sol" in proc.stdout
+    assert "expect model: github-copilot/gpt-6.1-sol" in proc.stdout
+    version = yaml.safe_load((ROOT / "agents" / f"{arm}.yaml").read_text())["version"]
+    assert f'"image": "pi-{version}-python3.12"' in proc.stdout
+    assert not list((ROOT / "results").glob(f"*-{arm}-heldout-r7"))
+
+
+@_needs_uv
+def test_run_sh_smoke_takes_a_problem_list():
+    proc = subprocess.run(
+        [str(ROOT / "run.sh"), "--dry-run", "pi-stock", "smoke", "7"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        env={**os.environ, "SMOKE_PROBLEM": "file_backup,xjq", "SMOKE_CHECKPOINTS": "1"},
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "--problem file_backup --problem xjq" in proc.stdout
+    assert "/.smoke-catalog/file_backup+xjq-c1 " in proc.stdout
+
+
+def test_heldout_problems_have_two_checkpoints():
+    src = Path(os.environ.get("SCBENCH_PROBLEMS_SRC", Path.home() / ".cache" / "scbench" / "problems"))
+    if not src.is_dir():
+        pytest.skip("SCB problem catalog not installed")
+    for p in HELDOUT:
+        config = yaml.safe_load((src / p / "config.yaml").read_text())
+        assert {"checkpoint_1", "checkpoint_2"} <= set(config["checkpoints"]), p
