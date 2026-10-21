@@ -106,3 +106,18 @@ Spend on pi-dev-team runs 2026-10-20/21: about $35 + $20.69 = about $56 notional
 2. Cut pidt cost and time before step 6 (11 checkpoints): at about $7.58 and 79 min per checkpoint, `lite_under20` would be roughly $80+ notional and 14+ hours for one repeat.
 3. Make /plan raise an ambiguity as an open question (or pick the reading the examples imply) instead of recording a decision that later reviews must honour; arm C showed this, not the model, is the gap.
 4. Record outcomes here and in `README.md`, then step 6.
+
+### pidt-next @ 0958eac: open questions instead of plan decisions (checkpoint 1 only)
+
+`SMOKE_CHECKPOINTS=1 ./run.sh pidt-next smoke`, run dir `results/20261021-pidt-next-smoke-r1`: finished, CLEAN (all calls `github-copilot/gpt-6.1-sol`). pi-dev-team `0958eac` (on top of `feb5afd`): unclear request points go under `## Risks & Open Questions` instead of "Plan decision"; reviewers change the reading only on explicit evidence.
+
+| | pidt-next @ feb5afd | pidt-next @ 0958eac |
+|---|---|---|
+| Tests (core / functionality / error) | 1/1, 16/27, 4/4 | 1/1, 16/27, 4/4 |
+| Wall time | 5484 s | 4082 s |
+| Tokens (cache read / cache write / output) | 26.1M / 2.79M / 248k | 14.2M / 1.94M / 183k |
+| Notional cost | $12.07 | $8.09 |
+
+The mechanism worked as written: the plan lists Q1 (one run per job or per trigger) and Q2 (`now_local` = `--now` or trigger time) as unresolved, says the examples do not decide them, and marks no "Plan decision". But the provisional reading it planned is the same wrong one for both, nobody resolves an open question in a non-interactive run, and the same 11 tests fail with the same values (`daily_multi_trigger` 15 != 43 events; `once_due` `now_local` 03:30 != 04:00). Score unchanged; the lower time and cost are within run-to-run variation until repeated.
+
+Spend on pi-dev-team runs 2026-10-20/21: about $56 + $8.09 = about $64 notional.

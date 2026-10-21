@@ -1,14 +1,14 @@
 {#-
-  Arm pidt-next image: pi 1.3.0 + pi-dev-team @ feb5afd (candidate under test).
+  Arm pidt-next image: pi 1.3.0 + pi-dev-team @ 0958eac (candidate under test).
   If that commit is not on GitHub yet, pre-build the image from a local checkout: scripts/build_pidt_local.sh.
   Derived from SCB src/slop_code/agent_runner/agents/pi/docker.j2 (upstream 31ceea3).
   pi is pinned here, NOT taken from {{ version }}: agents/pidt-next.yaml's version
-  ("1.3.0-pdtfeb5afd") is only the image cache key. Change PI_VERSION or
+  ("1.3.0-pdt0958eac") is only the image cache key. Change PI_VERSION or
   PDT_SHA here -> change the version string in agents/pidt-next.yaml too.
 -#}
 {%- set PI_VERSION = "1.3.0" -%}
 {%- set PDT_REPO = "https://github.com/sanjit-roopra/pi-dev-team" -%}
-{%- set PDT_SHA = "feb5afd3ed3c90c53a4297d2c617e1df399d63e7" -%}
+{%- set PDT_SHA = "0958eac198c8fc537e3cc43760e53cdfe157de68" -%}
 FROM {{ base_image }}
 
 # --- Root-level setup ---------------------------------------------------------
