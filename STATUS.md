@@ -72,7 +72,7 @@ The candidate makes `/plan` save the user's request word for word under `.claude
 
 The format drift is gone: every `now_local` ends in `Z` and core passes. The plan carries a `**Source request**` line and spec-compliance dispatches name the request file. What still fails:
 
-- Checkpoint 1, 6 tests: the window semantics. The spec says a job is due when its trigger falls between `--now` and `--now + --duration`; the build reports the last trigger at or before `--now` (e.g. `02:00` instead of `03:30`, `2025-09-08T15:31` instead of `2025-09-10T15:30`), and emits one run per job where the window holds several triggers (15 events instead of 43 and 29).
+- Checkpoint 1, 7 tests: the window semantics. The spec says a job is due when its trigger falls between `--now` and `--now + --duration`; the build reports the last trigger at or before `--now` (e.g. `02:00` instead of `03:30`, `2025-09-08T15:31` instead of `2025-09-10T15:30`), and emits one run per job where the window holds several triggers (15 events instead of 43 and 29).
 - Checkpoint 1, 4 glob tests: the same `--mount mount` error Claude Code hits, so likely a test-harness case, not an agent failure.
 - Checkpoint 2, 8 tests: `JOB_COMPLETED.total_size` for verify and dry-run jobs (the spec example shows `0`; the build sums file sizes), and pack boundaries that close a pack one file early, which shifts the later `PACK_CREATED` sizes and checksums.
 
