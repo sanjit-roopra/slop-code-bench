@@ -3,7 +3,7 @@
 #
 #   ./run.sh [options] ARM SUBSET [REPEAT]
 #
-#   ARM     cc-clean | pidt | pidt-next | pidt-opus | pidt-full | pidt-lean | pi-stock
+#   ARM     cc-clean | pidt | pidt-next | pidt-opus | pidt-full | pidt-lean | pidt-lean-fast | pi-stock
 #   SUBSET  smoke | heldout | lite_under20 | lite | full
 #           smoke   = SMOKE_PROBLEM (comma list allowed), first SMOKE_CHECKPOINTS checkpoints
 #           heldout = file_merger, layered_config_synthesizer, dynamic_buffer,
@@ -124,9 +124,9 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
-  pidt-full|pidt-lean)
-    # pi-dev-team with DEV_TEAM_REVIEW=full | lean: the two agent yamls differ only in
-    # that env var and share one image (templates/pidt-tools.j2, adds ruff + lizard).
+  pidt-full|pidt-lean|pidt-lean-fast)
+    # pi-dev-team with DEV_TEAM_REVIEW=full | lean: the agent yamls differ only in env
+    # vars and image tag and share one template (templates/pidt-tools.j2, adds ruff + lizard).
     AGENT_YAML="$ROOT/agents/$ARM.yaml"
     MODEL="${PIDT_MODEL:-github-copilot/gpt-6.1-sol}"
     PROMPT="$ROOT/prompts/pidt.jinja"
@@ -140,7 +140,7 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
-  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-next|pidt-opus|pidt-full|pidt-lean|pi-stock)" ;;
+  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-next|pidt-opus|pidt-full|pidt-lean|pidt-lean-fast|pi-stock)" ;;
 esac
 
 # --- Subset -> problem selection ---------------------------------------------

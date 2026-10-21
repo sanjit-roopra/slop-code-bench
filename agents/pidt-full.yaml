@@ -17,7 +17,7 @@
 # eval_coding repo root.
 type: pi
 binary: pi
-version: 1.3.0-pdt3b80fff-tools
+version: 1.3.0-pdt44b3826-tools
 docker_template: templates/pidt-tools.j2
 provider: github-copilot
 thinking: high

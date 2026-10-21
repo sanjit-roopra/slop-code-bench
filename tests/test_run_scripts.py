@@ -314,6 +314,14 @@ def test_pidt_full_and_lean_differ_only_in_dev_team_review():
     assert full["docker_template"] == "templates/pidt-tools.j2"
 
 
+def test_pidt_lean_fast_is_lean_plus_parallel_agents():
+    lean = yaml.safe_load((ROOT / "agents" / "pidt-lean.yaml").read_text())
+    fast = yaml.safe_load((ROOT / "agents" / "pidt-lean-fast.yaml").read_text())
+    assert fast["env"].pop("DEV_TEAM_MAX_PARALLEL_AGENTS") == "12"
+    assert fast.pop("version").removesuffix("-fast") == lean.pop("version").removesuffix("-lean")
+    assert fast == lean
+
+
 def test_pidt_tools_template_pins_ruff_and_lizard():
     text = (ROOT / "templates" / "pidt-tools.j2").read_text()
     assert re.search(r'RUFF_VERSION = "\d+\.\d+\.\d+"', text)
@@ -328,17 +336,24 @@ def test_pidt_tools_sha_matches_arm_versions():
     text = (ROOT / "templates" / "pidt-tools.j2").read_text()
     m = re.search(r'PDT_SHA = "([^"]+)"', text)
     assert m
-    full, lean = (
+    versions = tuple(
         yaml.safe_load((ROOT / "agents" / f"{a}.yaml").read_text())["version"]
-        for a in ("pidt-full", "pidt-lean")
+        for a in ("pidt-full", "pidt-lean", "pidt-lean-fast")
     )
     assert re.fullmatch(r"[0-9a-f]{40}", m.group(1))
-    assert (full, lean) == (f"1.3.0-pdt{m.group(1)[:7]}-tools", f"1.3.0-pdt{m.group(1)[:7]}-lean")
+    sha7 = m.group(1)[:7]
+    assert versions == (f"1.3.0-pdt{sha7}-tools", f"1.3.0-pdt{sha7}-lean", f"1.3.0-pdt{sha7}-fast")
 
 
-def test_set_pdt_sha_updates_template_and_both_arms(tmp_path: Path):
+def test_set_pdt_sha_updates_template_and_all_arms(tmp_path: Path):
     repo = tmp_path / "eval"
-    for rel in ("scripts/set_pdt_sha.sh", "templates/pidt-tools.j2", "agents/pidt-full.yaml", "agents/pidt-lean.yaml"):
+    for rel in (
+        "scripts/set_pdt_sha.sh",
+        "templates/pidt-tools.j2",
+        "agents/pidt-full.yaml",
+        "agents/pidt-lean.yaml",
+        "agents/pidt-lean-fast.yaml",
+    ):
         (repo / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / rel, repo / rel)
     pdt = tmp_path / "pdt"
@@ -356,7 +371,7 @@ def test_set_pdt_sha_updates_template_and_both_arms(tmp_path: Path):
     )
     assert proc.returncode == 0, proc.stderr
     assert f'{{%- set PDT_SHA = "{sha}" -%}}' in (repo / "templates" / "pidt-tools.j2").read_text()
-    for a, suffix in (("pidt-full", "tools"), ("pidt-lean", "lean")):
+    for a, suffix in (("pidt-full", "tools"), ("pidt-lean", "lean"), ("pidt-lean-fast", "fast")):
         assert yaml.safe_load((repo / "agents" / f"{a}.yaml").read_text())["version"] == f"1.3.0-pdt{sha[:7]}-{suffix}"
     bad = subprocess.run(
         [str(repo / "scripts" / "set_pdt_sha.sh"), "deadbeef", str(pdt)], capture_output=True, text=True
@@ -364,7 +379,7 @@ def test_set_pdt_sha_updates_template_and_both_arms(tmp_path: Path):
     assert bad.returncode == 2
 
 
-@pytest.mark.parametrize("arm", ["pidt-full", "pidt-lean"])
+@pytest.mark.parametrize("arm", ["pidt-full", "pidt-lean", "pidt-lean-fast"])
 def test_check_clean_knows_pidt_review_arms(arm: str):
     import check_clean
 
@@ -389,7 +404,7 @@ def test_run_sh_rejects_bad_heldout_checkpoints():
 
 
 @_needs_uv
-@pytest.mark.parametrize("arm", ["pidt-full", "pidt-lean"])
+@pytest.mark.parametrize("arm", ["pidt-full", "pidt-lean", "pidt-lean-fast"])
 def test_run_sh_dry_run_resolves_review_arms_on_heldout(arm: str):
     proc = subprocess.run(
         [str(ROOT / "run.sh"), "--dry-run", arm, "heldout", "7"],
