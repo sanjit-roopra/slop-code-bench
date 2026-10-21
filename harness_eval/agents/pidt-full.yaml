@@ -1,0 +1,34 @@
+# Arm pidt-full: pi-dev-team with DEV_TEAM_REVIEW=full, GPT-6.1 Sol via GitHub Copilot.
+#
+# pidt-full and pidt-lean are identical except env DEV_TEAM_REVIEW (full | lean):
+# same template, same version (so one shared image), same model, prompt and
+# environment. The image (templates/pidt-tools.j2) adds ruff and lizard so the
+# static-analysis pre-pass runs in both arms.
+#
+# Loads into slop_code.agent_runner.agents.pi.agent.PiConfig (extra="forbid").
+#
+# version is the SCB image cache key (pi-<version>-<env name>). It carries the
+# pi-dev-team SHA: set it with scripts/set_pdt_sha.sh <sha>, which updates
+# PDT_SHA in templates/pidt-tools.j2 and this line in both arms together.
+#
+# Model is NOT set here: run.sh passes github-copilot/gpt-6.1-sol (runs/pidt-full_*.yaml for lite subsets).
+#
+# docker_template is resolved relative to the CWD: run slop-code from the
+# eval_coding repo root.
+type: pi
+binary: pi
+version: 1.3.0-pdt44b3826-tools
+docker_template: templates/pidt-tools.j2
+provider: github-copilot
+thinking: high
+timeout: 10800 # seconds; plan + build + reviewer swarm runs longer than a bare agent
+extra_args:
+  - "-e"
+  - /opt/pi-dev-team
+env:
+  PI_TELEMETRY: "0"
+  DEV_TEAM_REVIEW: full
+cost_limits:
+  cost_limit: 0
+  net_cost_limit: 0
+  step_limit: 0

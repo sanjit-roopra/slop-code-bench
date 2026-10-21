@@ -1,0 +1,25 @@
+# Run outputs (raw traces, snapshots, per-run manifests). Keep summaries elsewhere.
+outputs/
+results/*
+!results/.gitkeep
+
+# Credentials: never commit.
+auth.json
+**/auth.json
+*.token
+*_token
+cc_oauth_token
+.env
+.env.*
+
+# Python / tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Local agent state
+.claude/metrics/
+.claude/settings.local.json
+.DS_Store

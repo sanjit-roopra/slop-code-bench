@@ -1,0 +1,24 @@
+# Arm pidt-full. pi 1.3.0 + pi-dev-team (DEV_TEAM_REVIEW=full, ruff + lizard image), GPT-6.1 Sol via GitHub Copilot.
+#
+# Subset: frozen copy of SCB configs/runs/lite.yaml @ upstream 31ceea3
+# ("Lightweight debug/experimentation subset with one API problem."). Problem list copied verbatim; do not edit
+# without re-freezing against a new SCB SHA.
+#
+# Run from the eval_coding repo root (relative paths resolve against CWD):
+#   TMPDIR=/tmp uv run --project vendor/slop-code-bench slop-code run --config runs/pidt-full_lite.yaml
+# pass_policy is left at SCB's default, as in the upstream subset file.
+agent: agents/pidt-full.yaml
+environment: environments/docker-python3.12-uv-pidt.yaml
+prompt: prompts/pidt.jinja
+model:
+  provider: github-copilot
+  name: gpt-6.1-sol
+thinking: high
+save_dir: outputs
+save_template: lite/pidt-full/${model.name}_${agent.version}_${thinking}_${prompt}/${now:%Y%m%dT%H%M}
+problems:
+  - code_search
+  - xjq
+  - file_backup
+  - etl_pipeline
+  - datagate
