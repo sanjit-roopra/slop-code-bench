@@ -167,3 +167,16 @@ Program files only (`scripts/program_quality.py`):
 | pidt-lean (Sol) | `results/20261021-pidt-lean-heldout-r1` | 45/46 | $9.22 | 3909 s | 502 | 0.146 | 0.000 | 0% | 0.098 | 8 |
 
 Every arm fails `test_error_cases[spec_errors/bool_nonstandard_strict]`; Claude Code also fails `test_spec_correct_cases[spec_correct/cross_family_coercion]`. On this task the extra pi-dev-team time buys no tests. Lean is half the cost and time of full and gives the best code-quality numbers; it treats a lizard threshold breach as an error at every checkpoint, while full leaves lizard to the final review.
+
+## file_merger checkpoint 1: pidt-lean-fast (pi-dev-team 44b3826)
+
+`results/20261021-pidt-lean-fast-smoke-r1`: 45/46, $3.97, 2286 s, 87 steps, CLEAN.
+Program: 335 lines, verbosity 0.169, erosion 0, clones 0%, lint/line 0.119, cc_max 9.
+Against pidt-lean (3909 s, $9.22) the run is 42% faster, but Sol planned 1 slice
+instead of 3 (about -1860 s); the plan code did not change between the commits.
+Speed-ups that took effect: build_phase.py batching (bookkeeping-only implementer
+turns 41 -> 6), 12 parallel agents (slot wait 43-70 s -> under 1 s, no 429s),
+Farley overlapped with the final checks (+53 s net, since lean before had no Farley).
+Medium effort for lenses did not take effect: the main session passes an explicit
+`thinking` on dispatch, which overrides agent frontmatter. n=1; repeat before
+crediting the speed-ups.
