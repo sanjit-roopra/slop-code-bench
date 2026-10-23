@@ -47,7 +47,7 @@ Costs are list prices applied to the trace's token counts (checked by hand again
 
 ## Possible pi-dev-team fixes (none built yet beyond `feb5afd`)
 
-Repo: `/Users/sanjit.roopra/git/personal/pi-dev-team`, branch `request-as-spec` at `feb5afd`, committed, **not pushed** (the user decides on pushing or a PR). Base: main `3c34bf5`.
+Repo: `/Users/sanjit.roopra/git/personal/pi-dev-team`, branch `request-as-spec` (now at `44b3826`), merged into `main` by PR #54 on 2026-10-23 with a merge commit, so every SHA the arms pin stays reachable from `main`. Original base: main `3c34bf5`.
 
 Repo rules (from `PORTING.md` and the earlier session): the tree is a port of upstream bdfinst/agentic-dev-team pinned at `2bf3d985`. Never hand-edit `agents/` or `skills/`; change them through `sync/sync_upstream.py` (`PATCHES` / `LEAN_PATCHES`, literal replacements that must each hit at least once) or `overrides/notes/<skill>.md` (inserted at the `<!-- pi-port-notes -->` marker), then run `npm run sync` with the upstream checkout at `2bf3d985` (restore it to its branch afterwards). Python stays byte-identical to upstream. Sub-agents see only their task string (`extensions/dev-team/subagent.ts:307,423`). Document each change in `PORTING.md` §5. Checks: `npm test` (node + Python), `npm run e2e`, `npx -y -p typescript@5.9.3 tsc -p .`.
 
@@ -75,7 +75,7 @@ Before claiming a fix works, prove it on checkpoint 1 only (`SMOKE_CHECKPOINTS=1
 - Copilot bills by premium requests with per-model multipliers, not tokens; the dollar figures here are notional.
 - Never print or commit secrets. The Claude Code token is read only into the environment at run time from `~/.config/scb/cc_oauth_token`. Copilot auth reaches the container only through the SCB file credential (`configs/providers.yaml`, fork patch `67c6cf0` copies just the `github-copilot` entry of `~/.pi/agent/auth.json`).
 - A filtered copy of the Copilot `auth.json` is in the old session's scratchpad (`/private/tmp/claude-501/-Users-sanjit-roopra-git-dedalus-eval-coding/bcd571d8-cc6a-4b98-bafc-ee9dfad7d374/scratchpad/smoke1/agent/auth.json`); delete it.
-- Pushing is outward-facing. Since 2026-10-21 this eval lives in `harness_eval/` of the fork (branch `harness-eval`, pushed); pi-dev-team `request-as-spec` is pushed as a branch, not merged.
+- Pushing is outward-facing. Since 2026-10-21 this eval lives in `harness_eval/` of the fork (branch `harness-eval`, pushed); pi-dev-team `request-as-spec` was merged into `main` by PR #54 on 2026-10-23, and `harness-eval` into the fork's `main` the same day.
 
 ## Reporting to the user
 

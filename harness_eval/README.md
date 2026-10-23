@@ -114,7 +114,7 @@ uv run --with pytest pytest -q
 
 | # | Step | Status |
 |---|------|--------|
-| 1 | Fork SCB (`harness-eval`) + patches: Copilot file-credential passthrough, count `toolResult` usage (dev_team_subagent) in cost/tokens, Copilot provider + Opus 5.5 / GPT-6.1 Sol models | Done in fork (`67c6cf0`, `bb0e1f6`, `71a2a11`, `5fa3795`); submodule pointer committed; fork not pushed yet |
+| 1 | Fork SCB (`harness-eval`) + patches: Copilot file-credential passthrough, count `toolResult` usage (dev_team_subagent) in cost/tokens, Copilot provider + Opus 5.5 / GPT-6.1 Sol models | Done in fork (`67c6cf0`, `bb0e1f6`, `71a2a11`, `5fa3795`); submodule pointer committed; fork pushed and `harness-eval` merged into the fork's `main` on 2026-10-23 |
 | 2 | eval_coding skeleton: repo, submodule, `.gitignore`, `pyproject.toml`, layout | Done |
 | 3 | Arm configs, image templates, environment, prompts, per-arm run configs | Done (written, dry-run resolves for all arms) |
 | 4 | `run.sh` + manifest + clean check (+ smoke catalog, dry-run resolver, tests) | Done |
