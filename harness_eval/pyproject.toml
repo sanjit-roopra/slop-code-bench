@@ -1,0 +1,15 @@
+[project]
+name = "eval-coding"
+version = "0.1.0"
+description = "Harness A/B evaluation (Claude Code vs pi-dev-team) on SlopCodeBench"
+requires-python = ">=3.12"
+dependencies = ["pyyaml>=6"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

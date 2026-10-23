@@ -18,12 +18,17 @@ from slop_code.agent_runner.agents.pi import PiAgent
 from slop_code.agent_runner.agents.pi import PiConfig
 from slop_code.agent_runner.agents.utils import HOME_PATH
 from slop_code.agent_runner.credentials import CredentialType
+from slop_code.agent_runner.credentials import ProviderCatalog
 from slop_code.agent_runner.credentials import ProviderCredential
 from slop_code.agent_runner.models import AgentCostLimits
 from slop_code.agent_runner.models import AgentError
 from slop_code.agent_runner.registry import build_agent_config
 from slop_code.common.llms import APIPricing
+from slop_code.common.llms import APIPricingTier
+from slop_code.common.llms import ModelCatalog
 from slop_code.common.llms import ModelDefinition
+from slop_code.common.llms import TokenUsage
+from slop_code.entrypoints.utils import parse_model_override
 from slop_code.execution import DockerConfig
 from slop_code.execution import DockerEnvironmentSpec
 from slop_code.execution.runtime import RuntimeEvent
@@ -31,6 +36,8 @@ from slop_code.execution.runtime import RuntimeResult
 
 if TYPE_CHECKING:
     from slop_code.execution import Session
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 def run_with_deadline(call: Callable[[], None], timeout: float) -> None:
@@ -814,6 +821,136 @@ class TestPiAgent:
         with pytest.raises(AgentError, match="Failed to parse Codex auth JSON"):
             agent.setup(cast("Session", session))
 
+    @staticmethod
+    def _copilot_agent(
+        credential: ProviderCredential,
+        cost_limits: AgentCostLimits,
+        pricing: APIPricing,
+    ) -> PiAgent:
+        return PiAgent(
+            problem_name="test-problem",
+            verbose=False,
+            image="pi-test-image",
+            cost_limits=cost_limits,
+            pricing=pricing,
+            credential=credential,
+            binary="pi",
+            provider="github-copilot",
+            model="gpt-6.1-sol",
+            timeout=None,
+            thinking=None,
+            extra_args=[],
+            env={},
+            models_json=None,
+        )
+
+    @staticmethod
+    def _pi_auth_credential(
+        provider: str, value: str, tmp_path: Path
+    ) -> ProviderCredential:
+        return ProviderCredential(
+            provider=provider,
+            credential_type=CredentialType.FILE,
+            value=value,
+            source=str(tmp_path / "auth.json"),
+            destination_key="",
+        )
+
+    def test_setup_with_copilot_file_auth_copies_only_copilot_entry(
+        self,
+        tmp_path: Path,
+        mock_cost_limits: AgentCostLimits,
+        mock_pricing: APIPricing,
+    ) -> None:
+        copilot_entry = {
+            "type": "oauth",
+            "refresh": "fake-refresh",
+            "access": "fake-access",
+            "expires": 1,
+        }
+        host_auth = {
+            "github-copilot": copilot_entry,
+            "anthropic": {"type": "oauth", "access": "other-secret"},
+            "openai-codex": {"type": "oauth", "access": "codex-secret"},
+        }
+        credential = self._pi_auth_credential(
+            "github-copilot", json.dumps(host_auth), tmp_path
+        )
+        spec = DockerEnvironmentSpec(
+            name="docker-test",
+            docker=DockerConfig(image="pi-test-image"),
+        )
+        session = FakeSession(
+            runtime=FakeRuntime(), working_dir=tmp_path, spec=spec
+        )
+        agent = self._copilot_agent(credential, mock_cost_limits, mock_pricing)
+
+        agent.setup(cast("Session", session))
+
+        assert agent._pi_auth_dir is not None
+        auth_path = agent._pi_auth_dir / "auth.json"
+        assert json.loads(auth_path.read_text()) == {
+            "github-copilot": copilot_entry
+        }
+        assert auth_path.stat().st_mode & 0o777 == 0o666
+        assert "other-secret" not in auth_path.read_text()
+        assert "codex-secret" not in auth_path.read_text()
+
+    def test_copilot_file_auth_is_not_injected_as_env(
+        self,
+        tmp_path: Path,
+        mock_cost_limits: AgentCostLimits,
+        mock_pricing: APIPricing,
+    ) -> None:
+        raw = json.dumps({"github-copilot": {"type": "oauth", "access": "x"}})
+        credential = self._pi_auth_credential("github-copilot", raw, tmp_path)
+        session = FakeSession(runtime=FakeRuntime(), working_dir=tmp_path)
+        agent = self._copilot_agent(credential, mock_cost_limits, mock_pricing)
+
+        agent.setup(cast("Session", session))
+        _, env = agent._prepare_runtime_execution("task")
+
+        assert all(raw not in value for value in env.values())
+        assert all("access" not in value for value in env.values())
+
+    def test_setup_with_copilot_file_auth_missing_entry_raises(
+        self,
+        tmp_path: Path,
+        mock_cost_limits: AgentCostLimits,
+        mock_pricing: APIPricing,
+    ) -> None:
+        credential = self._pi_auth_credential(
+            "github-copilot",
+            json.dumps({"anthropic": {"type": "oauth", "access": "a"}}),
+            tmp_path,
+        )
+        session = FakeSession(runtime=FakeRuntime(), working_dir=tmp_path)
+        agent = self._copilot_agent(credential, mock_cost_limits, mock_pricing)
+
+        with pytest.raises(AgentError, match="no 'github-copilot' entry"):
+            agent.setup(cast("Session", session))
+
+    def test_setup_with_invalid_pi_auth_json_raises(
+        self,
+        tmp_path: Path,
+        mock_cost_limits: AgentCostLimits,
+        mock_pricing: APIPricing,
+    ) -> None:
+        credential = self._pi_auth_credential(
+            "github-copilot", "{not-json", tmp_path
+        )
+        session = FakeSession(runtime=FakeRuntime(), working_dir=tmp_path)
+        agent = self._copilot_agent(credential, mock_cost_limits, mock_pricing)
+
+        with pytest.raises(AgentError, match="Failed to parse pi auth JSON"):
+            agent.setup(cast("Session", session))
+
+    def test_extract_pi_provider_auth_rejects_non_object_entry(self) -> None:
+        with pytest.raises(AgentError, match="no 'github-copilot' entry"):
+            PiAgent._extract_pi_provider_auth(
+                {"github-copilot": "token"}, "github-copilot"
+            )
+
     def test_parse_line_message_end_usage(
         self, mock_pricing: APIPricing
     ) -> None:
@@ -948,6 +1085,265 @@ class TestPiAgent:
         assert agent.usage.net_tokens.output == 1_000_000
         assert agent.usage.net_tokens.cache_read == 1_000_000
         assert agent.usage.net_tokens.cache_write == 1_000_000
+
+    @staticmethod
+    def _run_stream(
+        tmp_path: Path,
+        lines: list[str],
+        pricing: APIPricing | None,
+    ) -> PiAgent:
+        stdout = "".join(f"{line}\n" for line in lines)
+        runtime = FakeRuntime()
+        runtime.events = [
+            *(RuntimeEvent(kind="stdout", text=f"{line}\n") for line in lines),
+            RuntimeEvent(
+                kind="finished",
+                result=RuntimeResult(
+                    exit_code=0,
+                    stdout=stdout,
+                    stderr="",
+                    setup_stdout="",
+                    setup_stderr="",
+                    elapsed=0.1,
+                    timed_out=False,
+                ),
+            ),
+        ]
+        spec = DockerEnvironmentSpec(
+            name="docker-test",
+            docker=DockerConfig(image="pi-test-image"),
+        )
+        session = FakeSession(runtime=runtime, working_dir=tmp_path, spec=spec)
+        agent = PiAgent(
+            problem_name="test-problem",
+            verbose=False,
+            image="pi-test-image",
+            cost_limits=AgentCostLimits(
+                step_limit=0, cost_limit=100.0, net_cost_limit=200.0
+            ),
+            pricing=pricing,
+            credential=None,
+            binary="pi",
+            provider="github-copilot",
+            model="gpt-6.1-sol",
+            timeout=None,
+            thinking=None,
+            extra_args=[],
+            env={},
+            models_json=None,
+        )
+        agent.setup(cast("Session", session))
+        agent.run("do something")
+        return agent
+
+    @staticmethod
+    def _message_end(role: str, usage: dict | None, **extra: object) -> str:
+        message: dict[str, object] = {"role": role, "content": [], **extra}
+        if usage is not None:
+            message["usage"] = usage
+        return json.dumps({"type": "message_end", "message": message})
+
+    def test_parse_line_counts_tool_result_usage(
+        self, mock_pricing: APIPricing
+    ) -> None:
+        line = self._message_end(
+            "toolResult",
+            {
+                "input": 21,
+                "output": 4145,
+                "cacheRead": 16633,
+                "cacheWrite": 18260,
+                "reasoning": 2377,
+                "cost": {"total": 0.0888053},
+            },
+            toolName="dev_team_subagent",
+        )
+
+        cost, tokens, payload = PiAgent.parse_line(line, pricing=mock_pricing)
+
+        assert cost == pytest.approx(0.0888053)
+        assert tokens is not None
+        assert tokens.input == 21 + 16633
+        assert tokens.output == 4145
+        assert tokens.cache_read == 16633
+        assert tokens.cache_write == 18260
+        assert tokens.reasoning == 2377
+        assert payload is not None
+
+    def test_parse_line_ignores_tool_result_without_usage(
+        self, mock_pricing: APIPricing
+    ) -> None:
+        line = self._message_end("toolResult", None, toolName="bash")
+        cost, tokens, payload = PiAgent.parse_line(line, pricing=mock_pricing)
+        assert cost is None
+        assert tokens is None
+        assert payload is not None
+
+    def test_parse_line_ignores_user_message_usage(
+        self, mock_pricing: APIPricing
+    ) -> None:
+        line = self._message_end(
+            "user", {"input": 5, "output": 5, "cost": {"total": 1.0}}
+        )
+        cost, tokens, _ = PiAgent.parse_line(line, pricing=mock_pricing)
+        assert cost is None
+        assert tokens is None
+
+    def test_run_counts_pi_dev_team_subagent_spend_from_real_trace(
+        self,
+        tmp_path: Path,
+        mock_pricing: APIPricing,
+    ) -> None:
+        # Trimmed from a real pi --mode json run with the pi-dev-team
+        # extension: 58 assistant turns (cost 0.7660835) and 11
+        # dev_team_subagent tool results (cost 1.3877747). tool_execution_end
+        # and turn_end repeat the same usage and must not be counted again.
+        lines = (
+            (FIXTURES_DIR / "pi_dev_team_trace.jsonl").read_text().splitlines()
+        )
+
+        agent = self._run_stream(tmp_path, lines, mock_pricing)
+
+        assert agent.usage.cost == pytest.approx(0.7660835 + 1.3877747)
+        tokens = agent.usage.net_tokens
+        assert tokens.cache_read == 5_411_392
+        assert tokens.input == 612 + 5_411_392
+        assert tokens.output == 55_095
+        assert tokens.cache_write == 424_218
+        assert tokens.reasoning == 15_298
+        # Tool results add spend, not steps: 58 assistant + 65 tool runs.
+        assert agent.usage.steps == 58 + 65
+
+    def test_run_prices_tool_result_usage_without_reported_cost(
+        self,
+        tmp_path: Path,
+        mock_pricing: APIPricing,
+    ) -> None:
+        million = {
+            "input": 1_000_000,
+            "output": 1_000_000,
+            "cacheRead": 1_000_000,
+            "cacheWrite": 1_000_000,
+        }
+        lines = [
+            self._message_end(
+                "toolResult", million, toolName="dev_team_subagent"
+            ),
+            self._message_end(
+                "assistant",
+                {**million, "cost": {"total": 0.5}},
+                stopReason="stop",
+            ),
+        ]
+
+        agent = self._run_stream(tmp_path, lines, mock_pricing)
+
+        # 1.38 priced from the model for the tool result + 0.5 reported.
+        assert agent.usage.cost == pytest.approx(1.38 + 0.5)
+        assert agent.usage.net_tokens.input == 4_000_000
+        assert agent.usage.net_tokens.output == 2_000_000
+
+    def test_run_applies_prompt_tiers_per_message(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        pricing = APIPricing(
+            input=4.0,
+            output=15.0,
+            prompt_tiers=[
+                APIPricingTier(max_input_tokens=272_000, input=2.0, output=10.0)
+            ],
+        )
+        usage = {"input": 200_000, "output": 100_000}
+        lines = [
+            self._message_end("assistant", usage, stopReason="toolUse"),
+            self._message_end("assistant", usage, stopReason="stop"),
+        ]
+
+        agent = self._run_stream(tmp_path, lines, pricing)
+
+        # Each request is under the tier: 2 x (0.4 + 1.0), not base rates.
+        assert agent.usage.cost == pytest.approx(2.8)
+
+    @staticmethod
+    def _sol_like_pricing() -> APIPricing:
+        return APIPricing(
+            input=4.0,
+            output=15.0,
+            cache_read=0.2,
+            cache_write=5.0,
+            prompt_tiers=[
+                APIPricingTier(
+                    max_input_tokens=272_000,
+                    input=2.0,
+                    output=10.0,
+                    cache_read=0.1,
+                    cache_write=2.5,
+                )
+            ],
+        )
+
+    # One dev_team_subagent run from the real trace shape: 41 turns whose
+    # summed input (725k) is far above the 272k tier, while each turn is not.
+    _MULTI_TURN_USAGE = {"input": 10, "output": 1000, "cacheRead": 725_353}
+
+    def test_parse_line_tiers_tool_result_per_subagent_turn(self) -> None:
+        line = self._message_end(
+            "toolResult",
+            dict(self._MULTI_TURN_USAGE),
+            toolName="dev_team_subagent",
+            details={
+                "results": [
+                    {
+                        "model": "github-copilot/gpt-6.1-sol",
+                        "usage": {**self._MULTI_TURN_USAGE, "turns": 41},
+                    }
+                ]
+            },
+        )
+
+        cost, _, _ = PiAgent.parse_line(line, pricing=self._sol_like_pricing())
+
+        # Tier rates (~17.7k input per turn), not base rates.
+        assert cost == pytest.approx(2.0 * 10e-6 + 10.0 * 1e-3 + 0.1 * 0.725353)
+
+    def test_parse_line_sums_reported_subagent_run_costs(self) -> None:
+        line = self._message_end(
+            "toolResult",
+            dict(self._MULTI_TURN_USAGE),
+            toolName="dev_team_subagent",
+            details={
+                "results": [
+                    {"usage": {"input": 1, "cost": 0.03, "turns": 2}},
+                    {"usage": {"input": 1, "cost": {"total": 0.02}}},
+                ]
+            },
+        )
+
+        cost, _, _ = PiAgent.parse_line(line, pricing=self._sol_like_pricing())
+
+        assert cost == pytest.approx(0.05)
+
+    def test_parse_line_prices_tool_result_without_breakdown_untiered(
+        self,
+    ) -> None:
+        line = self._message_end(
+            "toolResult", dict(self._MULTI_TURN_USAGE), toolName="some_tool"
+        )
+
+        cost, _, _ = PiAgent.parse_line(line, pricing=self._sol_like_pricing())
+
+        # Turn count unknown: base rates, an upper bound.
+        assert cost == pytest.approx(4.0 * 10e-6 + 15.0 * 1e-3 + 0.2 * 0.725353)
+
+    def test_parse_line_tiers_assistant_message_as_one_request(self) -> None:
+        line = self._message_end(
+            "assistant", dict(self._MULTI_TURN_USAGE), stopReason="stop"
+        )
+
+        cost, _, _ = PiAgent.parse_line(line, pricing=self._sol_like_pricing())
+
+        assert cost == pytest.approx(4.0 * 10e-6 + 15.0 * 1e-3 + 0.2 * 0.725353)
 
     def test_run_raises_when_pi_returns_message_error_with_zero_exit(
         self,
@@ -1200,6 +1596,76 @@ class TestPiAgent:
         assert agent._last_command is not None
         assert agent._last_command.result is not None
         assert agent._last_command.result.exit_code == 143
+
+
+class TestPiCopilotCatalog:
+    """The shipped catalogs route Copilot models through pi."""
+
+    @pytest.fixture(autouse=True)
+    def _real_catalogs(self) -> Iterable[None]:
+        ProviderCatalog.clear()
+        ModelCatalog.clear()
+        yield
+        ProviderCatalog.clear()
+        ModelCatalog.clear()
+
+    def test_github_copilot_is_a_pi_auth_file_provider(self) -> None:
+        provider = ProviderCatalog.get("github-copilot")
+        assert provider is not None
+        assert provider.credential_type == CredentialType.FILE
+        assert provider.file_path == "~/.pi/agent/auth.json"
+
+    @pytest.mark.parametrize(
+        ("model_ref", "pi_model"),
+        [
+            ("github-copilot/gpt-6.1-sol", "gpt-6.1-sol"),
+            ("github-copilot/copilot-claude-opus-5.5", "claude-opus-5.5"),
+        ],
+    )
+    def test_copilot_models_build_pi_agent(
+        self,
+        model_ref: str,
+        pi_model: str,
+        mock_cost_limits: AgentCostLimits,
+    ) -> None:
+        override = parse_model_override(model_ref)
+        credential = ProviderCredential(
+            provider=override.provider,
+            credential_type=CredentialType.FILE,
+            value="{}",
+            source="auth.json",
+            destination_key="",
+        )
+        agent = PiAgent._from_config(
+            config=PiConfig(
+                type="pi", version="1.3.0", cost_limits=mock_cost_limits
+            ),
+            model=override.model_def,
+            credential=credential,
+            problem_name="test-problem",
+            verbose=False,
+            image="test-image",
+        )
+        assert isinstance(agent, PiAgent)
+        assert agent.provider == "github-copilot"
+        assert agent.model == pi_model
+        assert agent.models_json is None
+
+    def test_gpt_6_1_sol_uses_prompt_tier_under_272k(self) -> None:
+        model = ModelCatalog.get("gpt-6.1-sol")
+        assert model is not None
+        small = TokenUsage(input=1_000_000 // 4, output=0)
+        large = TokenUsage(input=300_000, output=0)
+        assert model.pricing.get_cost(small) == pytest.approx(0.5)
+        assert model.pricing.get_cost(large) == pytest.approx(1.2)
+
+    def test_opus_5_5_is_an_effort_model_for_claude_code(self) -> None:
+        model = ModelCatalog.get("opus-5.5")
+        assert model is not None
+        assert model.internal_name == "claude-opus-5-5"
+        assert model.provider == "anthropic"
+        assert model.thinking_style == "effort"
+        assert ModelCatalog.resolve_canonical("claude-opus-5.5") == "opus-5.5"
 
 
 class TestPiAgentRegistration:

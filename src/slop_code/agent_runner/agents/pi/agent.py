@@ -33,6 +33,9 @@ from slop_code.execution import DockerEnvironmentSpec
 from slop_code.execution import EnvironmentSpec
 from slop_code.execution import Session
 from slop_code.execution import StreamingRuntime
+from slop_code.logging import get_logger
+
+log = get_logger(__name__)
 
 PiThinking = tp.Literal["off", "minimal", "low", "medium", "high", "xhigh"]
 
@@ -132,6 +135,8 @@ _PROTECTED_PI_FLAGS = (
 _SIGTERM_EXIT_CODE = 128 + 15
 _OPENAI_AUTH_CLAIM = "https://api.openai.com/auth"
 _PI_ARTIFACT_EXCLUDED_EVENT_TYPES = frozenset({"message_update"})
+# ``message_end`` roles whose ``message.usage`` counts towards spend.
+_PI_USAGE_MESSAGE_ROLES = frozenset({"assistant", "toolResult"})
 
 
 def _decode_jwt_payload(token: str) -> dict[str, tp.Any] | None:
@@ -503,21 +508,18 @@ class PiAgent(Agent):
         message = payload.get("message")
         if not isinstance(message, dict):
             return None, None, payload
-        if message.get("role") != "assistant":
+        if message.get("role") not in _PI_USAGE_MESSAGE_ROLES:
             return None, None, payload
 
+        # Assistant turns carry the main agent's usage. Tool results carry
+        # usage only when the tool itself called a model (pi-dev-team's
+        # dev_team_subagent, for instance); that spend is not part of any
+        # assistant turn, so it is counted here exactly once.
         usage = message.get("usage")
         if not isinstance(usage, dict):
             return None, None, payload
 
-        cache_read = int(usage.get("cacheRead") or 0)
-        tokens = TokenUsage(
-            input=int(usage.get("input") or 0) + cache_read,
-            output=int(usage.get("output") or 0),
-            cache_read=cache_read,
-            cache_write=int(usage.get("cacheWrite") or 0),
-            reasoning=int(usage.get("reasoning") or 0),
-        )
+        tokens = PiAgent._usage_tokens(usage)
 
         reported_cost: float | None = None
         usage_cost = usage.get("cost")
@@ -526,15 +528,77 @@ class PiAgent(Agent):
             if isinstance(total, int | float):
                 reported_cost = float(total)
 
-        cost = (
-            reported_cost
-            if reported_cost is not None
-            else pricing.get_cost(tokens)
-            if pricing is not None
-            else 0.0
-        )
+        if reported_cost is not None:
+            cost = reported_cost
+        elif pricing is None:
+            cost = 0.0
+        elif message.get("role") == "toolResult":
+            cost = PiAgent._tool_result_cost(message, tokens, pricing)
+        else:
+            # One assistant message is one request.
+            cost = pricing.get_cost(tokens)
 
         return cost, tokens, payload
+
+    @staticmethod
+    def _usage_tokens(usage: dict[str, tp.Any]) -> TokenUsage:
+        cache_read = int(usage.get("cacheRead") or 0)
+        return TokenUsage(
+            input=int(usage.get("input") or 0) + cache_read,
+            output=int(usage.get("output") or 0),
+            cache_read=cache_read,
+            cache_write=int(usage.get("cacheWrite") or 0),
+            reasoning=int(usage.get("reasoning") or 0),
+        )
+
+    @staticmethod
+    def _tool_result_cost(
+        message: dict[str, tp.Any],
+        tokens: TokenUsage,
+        pricing: APIPricing,
+    ) -> float:
+        """Price a tool result's usage when pi reported no cost for it.
+
+        A tool result's usage is the total of every model call the tool made
+        (a dev_team_subagent result can span dozens of turns), so prompt
+        tiers cannot be chosen from it directly. When the tool lists its
+        per-run ``details.results[].usage``, each run uses its own reported
+        cost if present, otherwise its tokens are priced with the tier picked
+        by input per turn. Without that breakdown the base (untiered) rates
+        are used, an upper bound. Rates are the main model's: a subagent on a
+        different model is priced as if it ran the main one.
+        """
+        details = message.get("details")
+        results = details.get("results") if isinstance(details, dict) else None
+        runs = [
+            r["usage"]
+            for r in results or []
+            if isinstance(r, dict) and isinstance(r.get("usage"), dict)
+        ]
+        if not runs:
+            log.warning(
+                "agent.pi.tool_result_cost_untiered",
+                tool=message.get("toolName"),
+                input_tokens=tokens.input,
+            )
+            return pricing.model_copy(update={"prompt_tiers": []}).get_cost(
+                tokens
+            )
+
+        total = 0.0
+        for usage in runs:
+            run_cost = usage.get("cost")
+            if isinstance(run_cost, dict):
+                run_cost = run_cost.get("total")
+            if isinstance(run_cost, int | float):
+                total += float(run_cost)
+                continue
+            turns = usage.get("turns")
+            turns = int(turns) if isinstance(turns, int | float) else 1
+            total += pricing.get_cost(
+                PiAgent._usage_tokens(usage), requests=max(turns, 1)
+            )
+        return total
 
     @property
     def session(self) -> Session:
@@ -569,6 +633,12 @@ class PiAgent(Agent):
             and self.credential.credential_type == CredentialType.FILE
         ):
             self._write_converted_codex_auth(self._pi_auth_dir)
+        elif (
+            self.credential is not None
+            and self.credential.provider in _PI_PROVIDER_NAMES
+            and self.credential.credential_type == CredentialType.FILE
+        ):
+            self._write_pi_provider_auth(self._pi_auth_dir)
 
         if self.models_json is not None:
             models_path = self._pi_auth_dir / self.MODELS_FILENAME
@@ -613,6 +683,50 @@ class PiAgent(Agent):
         converted = self._convert_codex_auth_payload(payload)
         auth_path = target_dir / "auth.json"
         auth_path.write_text(json.dumps(converted), encoding="utf-8")
+        auth_path.chmod(0o666)
+
+    @staticmethod
+    def _extract_pi_provider_auth(
+        payload: dict[str, tp.Any],
+        pi_provider: str,
+    ) -> dict[str, dict[str, tp.Any]]:
+        """Keep only ``pi_provider``'s entry from a pi ``auth.json`` payload.
+
+        The host's pi ``auth.json`` can hold logins for several providers;
+        the container only ever needs the one it runs against.
+        """
+        entry = payload.get(pi_provider)
+        if not isinstance(entry, dict) or not entry:
+            raise AgentError(
+                f"pi auth file has no '{pi_provider}' entry. Log in with "
+                f"`pi` (/login {pi_provider}) on the host first."
+            )
+        return {pi_provider: entry}
+
+    def _write_pi_provider_auth(self, target_dir: Path) -> None:
+        """Copy one provider's login from a host pi ``auth.json``.
+
+        Used for FILE credentials whose provider is a pi provider name (for
+        instance ``github-copilot`` pointing at ``~/.pi/agent/auth.json``).
+        pi refreshes OAuth tokens in place, so the copy stays writable.
+        """
+        if self.credential is None:
+            raise AgentError("pi auth copy requires a credential")
+
+        pi_provider = self.credential.provider
+        try:
+            payload = json.loads(self.credential.value)
+        except json.JSONDecodeError as e:
+            raise AgentError(
+                f"Failed to parse pi auth JSON for '{pi_provider}'"
+            ) from e
+
+        if not isinstance(payload, dict):
+            raise AgentError("Invalid pi auth payload: expected JSON object")
+
+        extracted = self._extract_pi_provider_auth(payload, pi_provider)
+        auth_path = target_dir / "auth.json"
+        auth_path.write_text(json.dumps(extracted), encoding="utf-8")
         auth_path.chmod(0o666)
 
     def run(self, task: str) -> None:
@@ -719,8 +833,8 @@ class PiAgent(Agent):
         total_tokens = TokenUsage()
         step_count = 0
         runtime_result = None
-        reported_cost_micros = 0
-        has_reported_cost = False
+        total_cost = 0.0
+        usage_messages = 0
         stream_error_message: str | None = None
 
         for item in stream_cli_command(
@@ -734,9 +848,15 @@ class PiAgent(Agent):
                 runtime_result = item
                 break
 
-            _, tokens, payload = item
+            cost, tokens, payload = item
             if tokens is not None:
                 total_tokens = total_tokens + tokens
+                usage_messages += 1
+                # Per-message cost: pi's reported total when present, else
+                # model pricing for that message's tokens. Prompt tiers are
+                # picked per request (see parse_line / _tool_result_cost),
+                # never from the run's aggregate.
+                total_cost += float(cost or 0.0)
 
             if not payload:
                 continue
@@ -767,16 +887,6 @@ class PiAgent(Agent):
                                 "PI assistant message ended with "
                                 f"stopReason='{stop_reason}'."
                             )
-                    usage = message.get("usage")
-                    if isinstance(usage, dict):
-                        usage_cost = usage.get("cost")
-                        if isinstance(usage_cost, dict):
-                            total = usage_cost.get("total")
-                            if isinstance(total, int | float):
-                                has_reported_cost = True
-                                reported_cost_micros += int(
-                                    round(float(total) * 1_000_000)
-                                )
             elif event_type == "tool_execution_end":
                 step_count += 1
                 self.usage.steps += 1
@@ -795,8 +905,8 @@ class PiAgent(Agent):
                 "reasoning_tokens": total_tokens.reasoning,
                 "total_tokens": total_tokens.input + total_tokens.output,
                 "steps": step_count,
-                "reported_cost_present": int(has_reported_cost),
-                "reported_cost_micros": reported_cost_micros,
+                "usage_messages": usage_messages,
+                "cost_micros": int(round(total_cost * 1_000_000)),
             },
             stdout=stdout,
             stderr=stderr,
@@ -883,10 +993,8 @@ class PiAgent(Agent):
             reasoning=reasoning_tokens,
         )
 
-        if int(totals.get("reported_cost_present") or 0):
-            cost = (
-                float(int(totals.get("reported_cost_micros") or 0)) / 1_000_000
-            )
+        if int(totals.get("usage_messages") or 0):
+            cost = float(int(totals.get("cost_micros") or 0)) / 1_000_000
         else:
             cost = self.pricing.get_cost(tokens) if self.pricing else 0.0
 

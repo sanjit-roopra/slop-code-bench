@@ -86,8 +86,14 @@ class APIPricing(BaseModel):
     cache_write: float = 0
     prompt_tiers: list[APIPricingTier] = Field(default_factory=list)
 
-    def get_cost(self, tokens: TokenUsage) -> float:
-        rates = self._rates_for(tokens)
+    def get_cost(self, tokens: TokenUsage, requests: int = 1) -> float:
+        """Cost of ``tokens`` spread evenly over ``requests`` model calls.
+
+        Prompt tiers are chosen by the input size of one request, so a
+        multi-turn total must pass its turn count; otherwise the summed input
+        is compared against ``max_input_tokens`` as if it were one prompt.
+        """
+        rates = self._rates_for(tokens, requests)
         uncached_input_tokens = max(tokens.input - tokens.cache_read, 0)
         mil_input = uncached_input_tokens / 1_000_000
         mil_output = tokens.output / 1_000_000
@@ -100,12 +106,15 @@ class APIPricing(BaseModel):
             + rates.cache_write * mil_cache_write
         )
 
-    def _rates_for(self, tokens: TokenUsage) -> APIPricing | APIPricingTier:
+    def _rates_for(
+        self, tokens: TokenUsage, requests: int = 1
+    ) -> APIPricing | APIPricingTier:
+        per_request_input = tokens.input / max(requests, 1)
         for tier in sorted(
             self.prompt_tiers,
             key=lambda candidate: candidate.max_input_tokens,
         ):
-            if tokens.input <= tier.max_input_tokens:
+            if per_request_input <= tier.max_input_tokens:
                 return tier
         return self
 

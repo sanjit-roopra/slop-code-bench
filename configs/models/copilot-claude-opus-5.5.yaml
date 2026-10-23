@@ -1,0 +1,13 @@
+# Claude Opus 5.5 served through GitHub Copilot (pi's github-copilot
+# provider, model id "claude-opus-5.5"). Reference it by this file's name,
+# e.g. --model github-copilot/copilot-claude-opus-5.5: the bare
+# "claude-opus-5.5" is an alias of opus-5.5 (the Anthropic API model).
+internal_name: claude-opus-5.5
+provider: github-copilot
+pricing:
+  # Anthropic list rates; under a Copilot subscription this is notional spend.
+  input: 4
+  output: 20
+  cache_read: 0.2
+  cache_write: 5
+thinking_style: effort

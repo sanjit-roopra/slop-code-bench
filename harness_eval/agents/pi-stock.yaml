@@ -1,0 +1,23 @@
+# Optional arm: plain pi 1.3.0, no extension. Same image recipe as pidt minus
+# the pi-dev-team clone (templates/pi-stock.j2), so the only difference from
+# arm B is the extension and the prompt.
+#
+# version is suffixed so the image tag cannot collide with an image built
+# from SCB's stock pi/docker.j2 at version 1.3.0. The template hardcodes
+# pi 1.3.0 and ignores {{ version }}.
+#
+# Model comes from the run config (github-copilot / gpt-6.1-sol).
+type: pi
+binary: pi
+version: 1.3.0-stock
+docker_template: templates/pi-stock.j2
+provider: github-copilot
+thinking: high
+timeout: 7200
+extra_args: []
+env:
+  PI_TELEMETRY: "0"
+cost_limits:
+  cost_limit: 0
+  net_cost_limit: 0
+  step_limit: 0
