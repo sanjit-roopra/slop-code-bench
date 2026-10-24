@@ -17,7 +17,7 @@
 # harness_eval/ directory.
 type: pi
 binary: pi
-version: 1.3.0-pdt5076bf3-tools
+version: 1.3.0-pdtaf34311-tools
 docker_template: templates/pidt-tools.j2
 provider: github-copilot
 thinking: high
