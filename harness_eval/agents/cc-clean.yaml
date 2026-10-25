@@ -13,7 +13,7 @@
 # exported from ~/.config/scb/cc_oauth_token at run time only.
 type: claude_code
 binary: claude
-version: 2.1.304
+version: 2.1.310
 permission_mode: bypassPermissions
 timeout: 7200 # seconds per checkpoint invocation
 cost_limits:
