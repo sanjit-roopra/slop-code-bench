@@ -1,82 +1,130 @@
-# Handoff: harness eval and pi-dev-team fixes (2026-10-21)
+# Handoff: cut pi-dev-team wall time (2026-10-24)
 
-Read `STATUS.md` (full results tables) and `README.md` (the 9-step plan) first. This file is the short version plus the open pi-dev-team work.
+The previous handoff (2026-10-21, file_backup, plan drift) is in git history: `git show 1236f88:harness_eval/HANDOFF.md`. `STATUS.md` and `README.md` still describe the overall plan.
 
-## Goal
+## Your task
 
-Compare clean Claude Code (arm A) with pi + pi-dev-team (https://github.com/sanjit-roopra/pi-dev-team) on SlopCodeBench, with real costs including sub-agents and `plans/` kept between checkpoints. Later do the same for the "software factory". We are at step 5 (smoke); step 6 is `lite_under20`.
+pi + pi-dev-team (pidt) now matches or beats plain pi on quality, but takes about 7x as long and costs about 23x as much. The user wants the time down. Two parts, in order:
 
-## Terms
+1. **Is plain pi's quality its own, or is it the image?** Find out whether the `pi-stock` arm does any linting or ruff-style checking on its own, or whether its code is just good by default. Facts gathered so far (verify them, then go deeper):
+   - `templates/pi-stock.j2` installs no ruff, no lizard, no mypy. Only `templates/pidt-tools.j2` adds ruff 0.17.1 and lizard 1.24.1.
+   - In `results/20261024-pi-stock-smoke-r2`, the traces (`file_merger/checkpoint_*/agent/stdout.jsonl`) contain no `ruff`, `flake8`, `mypy`, `lizard` or `pytest`. They do contain `unittest` (46 / 75 / 75 / 174 hits per checkpoint) and `py_compile` (28 / 7 / 6 / 15).
+   - The pi-stock prompt is SCB's built-in `configs/prompts/just-solve.jinja`. pidt gets `harness_eval/prompts/pidt.jinja` (`/plan --yes ...` then `/build --yes`).
+   - Still to check: pi 1.3.0's default system prompt and built-in tools (does it tell the model to lint or test?), what the model actually runs per turn, and how many edit-test loops it does per checkpoint.
+   - Also check whether the base image (`configs/environments/docker-python3.12-uv.yaml`) ships any linter that pi could call.
+2. **Cut the engineering time.** Find ways to make pidt's `software-engineer` phase faster without losing the quality gains. Numbers and leads below.
 
-- **Problem**: one SCB task, e.g. `file_backup`.
-- **Checkpoint**: one stage of a problem's spec, graded by hidden pytest. Each checkpoint starts the agent with a fresh context in the same workspace.
-- **Smoke**: `file_backup` cut to its first N checkpoints (`SMOKE_CHECKPOINTS`, default 2). Checkpoint 1 is a CLI scheduler that reads a YAML schedule and prints JSONL events; checkpoint 2 adds backup strategies.
-- **Arms** (`run.sh ARM SUBSET`):
+Do the analysis yourself, one step at a time. **Do not start Workflows or several background sub-agents without asking the user**: it makes their MacBook lag. Ask before any benchmark run, and say how long it will take (a pidt file_merger 1–4 run takes about 4 hours).
 
-| Arm | Harness | Model | Agent yaml |
+## What changed since the last handoff
+
+### pi-dev-team (`~/git/personal/pi-dev-team`, fork https://github.com/sanjit-roopra/pi-dev-team)
+
+| Commit | Branch | State | What it does |
 |---|---|---|---|
-| `cc-clean` | Claude Code 2.1.304 | `claude-opus-5-5` (Claude OAuth) | `agents/cc-clean.yaml` |
-| `pidt` | pi 1.3.0 + pi-dev-team `3c34bf5` (main) | `github-copilot/gpt-6.1-sol` | `agents/pidt.yaml` |
-| `pidt-next` | pi 1.3.0 + pi-dev-team `feb5afd` (candidate) | `github-copilot/gpt-6.1-sol` | `agents/pidt-next.yaml` |
-| `pidt-opus` | pi 1.3.0 + pi-dev-team `feb5afd` | `github-copilot/claude-opus-5.5` | `agents/pidt-opus.yaml` |
-| `pidt-full` / `pidt-lean` | pi 1.3.0 + pi-dev-team (SHA pending, `scripts/set_pdt_sha.sh`) + ruff/lizard, `DEV_TEAM_REVIEW=full` / `lean` | `github-copilot/gpt-6.1-sol` | `agents/pidt-{full,lean}.yaml` |
+| `44b3826` | `request-as-spec` | merged into `main` (PR #54) | saves the `/plan` request word for word and makes it outrank the plan |
+| `5076bf3` | `dispatch-effort-cap` | PR #55 open, **not merged** (the auto-mode classifier blocked `gh pr merge`; the user has to merge it) | a dispatch's `thinking` may lower an agent's `effort` but not raise it, so the lean profile's medium-effort lenses really run at medium |
+| `af34311` | `lean-slim-panels` (based on `5076bf3`) | pushed, **no PR yet** | lean profile: only the `spec-compliance`, `correctness`, `structure` and `test` lenses until the last slice; the last slice runs every selected lens over every changed file; every lens gets the checkpoint diff as a patch file (lenses have no shell) |
 
-## Results so far (file_backup)
+`af34311` touched `extensions/dev-team/lean/build.md`, `lib/review-profile.ts`, `test/unit/review-profile.test.ts` and `PORTING.md`. Checks passed: `npm test` 1224 pass and 1 skipped, Python 182 OK, `npm run e2e` 39/39, `tsc` clean.
 
-| Run dir | Checkpoint 1 (core / functionality / error) | Checkpoint 2 (core / functionality / regression) | Cost (notional, incl. sub-agents) | Time |
+Repo rules: never hand-edit `agents/` or `skills/` (they are a port of upstream bdfinst/agentic-dev-team at `2bf3d985`; change them through `sync/sync_upstream.py` PATCHES / LEAN_PATCHES or `overrides/notes/<skill>.md`, then `npm run sync`). `extensions/` is port-owned and can be edited directly. Document each change in `PORTING.md`. Checks: `npm test`, `npm run e2e`, `npx -y -p typescript@5.9.3 tsc -p .`.
+
+### slop-code-bench (this repo, branch `harness-eval`, pushed)
+
+- `38ff74b` pointed the pidt arms at `5076bf3`; `dd55add` points them at `af34311` (`agents/pidt-{full,lean,lean-fast}.yaml`, `templates/pidt-tools.j2`). Change the SHA with `scripts/set_pdt_sha.sh <sha>`.
+- New: `scripts/pidt_agent_cost.py` and `scripts/pidt_lens_findings.py` (see Tools).
+- `results/` is git-ignored; the run dirs below exist only on this machine.
+
+## Arms
+
+| Arm | Harness | Model | Prompt | Image extras |
 |---|---|---|---|---|
-| `results/20261020-cc-clean-smoke-r1` | 1/1, 23/27, 2/4 | 1/1, 12/17, 26/32 | $0.44 + $0.37 | 124 s + 61 s |
-| `results/20261020-pidt-smoke-r1` | 0/1, 4/27, 4/4 | aborted | $7.58 + ~$7 | 4740 s + aborted |
-| `results/20261020-pidt-next-smoke-r1` | 1/1, 16/27, 4/4 | 1/1, 9/17, 21/32 | $12.07 + $8.37 | 5484 s + 4142 s |
-| `results/20261021-pidt-opus-smoke-r1` (checkpoint 1 only) | 1/1, 16/27, 4/4 | not run | $20.69 | 2815 s |
+| `cc-clean` | Claude Code 2.1.304 | `claude-opus-5-5` | `just-solve` | none |
+| `pi-stock` | pi 1.3.0, no extension | `github-copilot/gpt-6.1-sol`, thinking high | `just-solve` | jq only |
+| `pidt-lean-fast` | pi 1.3.0 + pi-dev-team `af34311`, `DEV_TEAM_REVIEW=lean`, `DEV_TEAM_MAX_PARALLEL_AGENTS=12` | `github-copilot/gpt-6.1-sol`, thinking high | `prompts/pidt.jinja` | ruff 0.17.1, lizard 1.24.1 |
 
-Costs are list prices applied to the trace's token counts (checked by hand against the Sol and Opus rates); both sides actually run on subscriptions.
+Run one: `SMOKE_PROBLEM=file_merger SMOKE_CHECKPOINTS=4 ./run.sh <arm> smoke <repeat>` from `harness_eval/`, with `DOCKER_HOST=unix:///Users/sanjit.roopra/.rd/docker.sock`. Output goes to `results/YYYYMMDD-<arm>-smoke-r<repeat>` (date of the start time).
 
-**Main finding:** pi-dev-team on Opus 5.5 fails the same 11 checkpoint 1 tests as on Sol, with the same wrong values, while Claude Code on Opus 5.5 passes 7 of them. The gap is the harness, not the model.
+## Results: file_merger, checkpoints 1–4
 
-## Why pi-dev-team loses points
+file_merger has 4 checkpoints (CSV/JSON/Parquet merge, then sharded and Hive-partitioned output, then nested types). Problem catalog: `~/.cache/scbench/problems/file_merger`.
 
-1. **Fixed already (candidate `feb5afd`): plan drift from the spec.** With the spec inline and no `docs/specs` artifact, upstream `/plan` made the plan the only spec, the model rewrote `Z` timestamps as `+00:00`, and every reviewer checked against the plan. `feb5afd` saves the typed `/plan` request word for word to `.claude/memory/requests/plan-<ts>.md` and makes that file outrank the plan. Verified in both runs: the plan has a `**Source request**:` line, all timestamps end in `Z`, and core passes.
-2. **Open: ambiguity locked in as "Plan decisions".** Both final plans (Sol and Opus) hold two unclear spec points settled the same wrong way as acceptance criteria. Sol planned them that way and every reviewer honoured them. Opus first planned the right per-trigger reading with the doubt under Risks; `spec-compliance-review` at the build's acceptance-criteria gate ("request outranks plan") read "Sort due jobs by `id`" and "For each due job" as once per invocation, and the build switched (plan Risks line "Revised at the build's acceptance-criteria gate"):
-   - "Each due job runs exactly once per invocation, even when it triggers more than once in the window." The tests want one run per trigger in the `[--now, --now + --duration]` window (43 events expected, 15 printed).
-   - "`JOB_ELIGIBLE.now_local` is `floor(--now)` ... (Plan decision; the request examples use `--now` equal to the trigger.)" The tests want the trigger time. The Opus plan saw the doubt and decided anyway.
-   - Evidence: `results/20261021-pidt-opus-smoke-r1/file_backup/checkpoint_1/snapshot/plans/backup-scheduler.md` lines 21-23; the Sol plan in `results/20261020-pidt-next-smoke-r1/.../plans/backup-scheduler.md` line 26.
-3. **Not agent drift: checkpoint 2 test/spec mismatch** (Sol run). Hidden tests omit `JOB_COMPLETED.total_size` for verify and dry-run jobs, while spec Example 1 shows `"total_size":0` and the text says verify output is identical except kind/event. Hidden tests also close a pack only after the next `FILE_SELECTED`, while Example 2 shows `PACK_CREATED` pack-3 straight after `FILE_PACKED` file4. Following the examples causes these failures; count them with the glob tests.
-4. **Not an agent failure:** the 4 `glob_*` hidden tests fail in all runs, Claude Code included (`--mount mount` path error, or for pidt-opus 4 events instead of 6-8). Check the test cases before counting them.
-5. **Cost and time:** about 30+ sub-agent calls per checkpoint (in the first pidt run the code-review swarm was $3.35 of $7.58), 26M cache-read tokens against Claude Code's 0.2M, 45-90 minutes per checkpoint. Step 6 (`lite_under20`, about 11 checkpoints) would be about $110+ and 15 hours per repeat at this rate.
+| | Claude Code | pi-stock | pidt `5076bf3` | pidt `af34311` |
+|---|---|---|---|---|
+| Run dir | `20261023-cc-clean-smoke-r2` | `20261024-pi-stock-smoke-r2` | `20261024-pidt-lean-fast-smoke-r2` | `20261024-pidt-lean-fast-smoke-r3` |
+| Tests, checkpoints 1 / 2 / 3 | 45/46, 83/86, 101/104 | same | same | same |
+| Tests, checkpoint 4 | 138/147 | 139/147 | 137/147 | 138/147 |
+| Total time | 24 min | 34 min | 229 min | 242 min (37 / 62 / 47 / 96) |
+| Total cost (list prices) | $5.82 | $1.64 | $40.81 | $37.95 |
+| Steps | 64 | 181 | 538 | 482 |
+| Program lines at checkpoint 4 | 2,215 | 1,464 | 1,728 | 1,808 |
+| Test lines at checkpoint 4 | none | about 1,090 (4 files) | 6,145 (6 files) | 7,144 (4 files) |
+| SCB lint (`ruff --isolated --preview`, ~80 rule families) | 284 | 230 | 277 | **199** |
+| Verbosity (scb-check 0.1.3) | 0.288 | 0.317 | **0.172** | 0.219 |
+| Erosion | 0.617 | 0.703 | **0.000** | 0.038 |
+| Clone lines | 30 | **0** | 15 | 6 |
+| Max cyclomatic complexity (radon) | 40 | 29 | **10** | 14 |
 
-## Possible pi-dev-team fixes (none built yet beyond `feb5afd`)
+Quality numbers are for program files only (`uv run --quiet python harness_eval/scripts/program_quality.py <run dir> --json-out <file>`, from the repo root).
 
-Repo: `/Users/sanjit.roopra/git/personal/pi-dev-team`, branch `request-as-spec` (now at `44b3826`), merged into `main` by PR #54 on 2026-10-23 with a merge commit, so every SHA the arms pin stays reachable from `main`. Original base: main `3c34bf5`.
+Checkpoint 4 failures:
+- 4 core failures shared by every arm are a benchmark bug: the test CSVs use `\"` escapes, the spec says RFC 4180 (`""`). Agents parse strictly and exit 5; the reference passes only because Python's csv module is lenient by default.
+- 3 regression failures are shared by every arm.
+- Real misses: `partition_by_map_value` and `map_lookup_no_quotes` (Claude Code, pidt `5076bf3`); `nested_type_alias_with_parquet` (pi, pidt `5076bf3`; alias type `array` unsupported).
 
-Repo rules (from `PORTING.md` and the earlier session): the tree is a port of upstream bdfinst/agentic-dev-team pinned at `2bf3d985`. Never hand-edit `agents/` or `skills/`; change them through `sync/sync_upstream.py` (`PATCHES` / `LEAN_PATCHES`, literal replacements that must each hit at least once) or `overrides/notes/<skill>.md` (inserted at the `<!-- pi-port-notes -->` marker), then run `npm run sync` with the upstream checkout at `2bf3d985` (restore it to its branch afterwards). Python stays byte-identical to upstream. Sub-agents see only their task string (`extensions/dev-team/subagent.ts:307,423`). Document each change in `PORTING.md` §5. Checks: `npm test` (node + Python), `npm run e2e`, `npx -y -p typescript@5.9.3 tsc -p .`.
+Most of pidt's remaining SCB lint is TRY003 / EM101 / EM102 (160 of 277 in r2) and DOC* (49). pidt's own gate runs plain `ruff check` (default rules, 0 errors), so it never sees SCB's rule set.
 
-Candidates, in order of expected value:
+## Where pidt's time goes
 
-1. **Ambiguity is not a decision** (`overrides/notes/plan.md`). When the source request is unclear on a behaviour, the plan must (a) pick the reading its output examples imply and say so, and (b) list the other reading under `## Risks & Open Questions` as unresolved, not as an acceptance criterion marked "Plan decision". In non-interactive runs this keeps the choice visible to reviewers instead of protected. Add the matching line to `overrides/notes/build.md`: an open question from the plan is re-checked against the source request at spec-compliance, never treated as settled.
-2. **Reviewers may challenge plan decisions** (a `PATCHES` entry on `agents/spec-compliance-review.md`, next to the `feb5afd` patch). Today the orchestrator's dispatch can say "Do not revisit explicitly recorded contract choices" (seen in the first pidt trace). The patch: a plan decision that narrows or reinterprets the source request's wording is itself a finding to report.
-3. **One scenario per stated rule** (`overrides/notes/plan.md`; feb5afd's 4.9 diff already covers the literal examples). Each stated observable rule gets a Gherkin scenario; rules that depend on an open question are tested only where all readings agree. It does not target the checkpoint 2 failures (see item 3 above).
-4. **Save the request for `/ship` and `/specs` too**, not only `/plan` (`SAVE_REQUEST_SKILLS` in `extensions/dev-team/lib/skills.ts`). Consider whether `.claude/memory/requests/` should be git-ignored in user repos.
-5. **Cut cost** before step 6: fewer code-review rounds (3 rounds seen), a lighter reviewer set for single-file CLI work (the plan tier table in `skills/plan/SKILL.md` §5a already scales plan reviewers; the build-time review swarm does not scale the same way), and no QA agent when the plan's tests already ran.
+r2 (`5076bf3`), 229 min:
 
-Before claiming a fix works, prove it on checkpoint 1 only (`SMOKE_CHECKPOINTS=1`) on Sol (cheaper per token: about $12 against about $21 on Opus). Watch the 7 window tests (`daily_due_within_duration_no_select`, `daily_multi_trigger`, `exact_duration_boundary`, `once_due`, `weekly_multi_trigger`, `weekly_multiple_days`, `weekly_wrong_day`) and keep the `Z` format passing. Be careful that "examples outrank prose" style rules can be benchmark-shaped; keep them general.
+| Activity | Minutes | Share |
+|---|---|---|
+| `software-engineer`, 12 dispatches, strictly one after another | 111 | 48% |
+| Main session: its own turns, bash, test and lint runs (includes checkpoint 1's 49 min, see below) | 86 | 37% |
+| Review panels, 14 rounds, lenses in parallel | 20 | 9% |
+| Other single agents (spec-compliance gates, plan critics, qa-engineer) | 13 | 6% |
 
-## How to run a candidate
+`software-engineer` dispatches in r2 (turns, minutes, cost): checkpoint 2 (74, 14.3, $1.31), (41, 6.9, $0.61), (29, 6.5, $0.54), (22, 6.1, $0.47), (29, 8.4, $0.72); checkpoint 3 (21, 6.9, $0.51), (22, 5.9, $0.45), (27, 9.8, $0.70); checkpoint 4 (54, 14.1, $0.94), (40, 11.2, $0.82), (28, 6.8, $0.50), (72, 14.2, $1.08).
 
-1. Commit the fix in pi-dev-team.
-2. In `templates/pidt-next.j2` set `PDT_SHA` to the new full SHA, and set `version: 1.3.0-pdt<sha7>` in `agents/pidt-next.yaml` and `agents/pidt-opus.yaml` (the version is SCB's image cache key).
-3. `scripts/build_pidt_local.sh` builds `slop-code:pi-<version>-python3.12` from the local checkout (needed while the commit is not on GitHub).
-4. `SMOKE_CHECKPOINTS=1 ./run.sh pidt-next smoke` in the background, then once the container is up start `scripts/cost_guard.sh` (see its header) with a cost and time cap.
-5. Results land in `results/<date>-<arm>-smoke-r<n>/`: `file_backup/checkpoint_N/{evaluation.json, evaluation/stdout.txt, inference_result.json, agent/stdout.jsonl, snapshot/plans/}`, plus `clean_check.json` (must say CLEAN and name only the expected model).
+r2's checkpoint 1 trace holds only the last resume session (1.4 min, 12 turns), so its 49 min and $8.03 cannot be broken down. Cause unknown. r3's checkpoint 1 trace is complete.
 
-## Budget and safety
+### Effect of `af34311` (checkpoints 2–4 only, the span both traces cover)
 
-- The user's cap: **at most $100 list price of Copilot spend per night** on pi-dev-team runs; Copilot may throttle otherwise. Spent 2026-10-20/21: about $56. Only start runs whose spend you can bound (guard + checkpoint 1 only).
-- Copilot bills by premium requests with per-model multipliers, not tokens; the dollar figures here are notional.
-- Never print or commit secrets. The Claude Code token is read only into the environment at run time from `~/.config/scb/cc_oauth_token`. Copilot auth reaches the container only through the SCB file credential (`configs/providers.yaml`, fork patch `67c6cf0` copies just the `github-copilot` entry of `~/.pi/agent/auth.json`).
-- A filtered copy of the Copilot `auth.json` is in the old session's scratchpad (`/private/tmp/claude-501/-Users-sanjit-roopra-git-dedalus-eval-coding/bcd571d8-cc6a-4b98-bafc-ee9dfad7d374/scratchpad/smoke1/agent/auth.json`); delete it.
-- Pushing is outward-facing. Since 2026-10-21 this eval lives in `harness_eval/` of the fork (branch `harness-eval`, pushed); pi-dev-team `request-as-spec` was merged into `main` by PR #54 on 2026-10-23, and `harness-eval` into the fork's `main` the same day.
+| | r2 `5076bf3` | r3 `af34311` |
+|---|---|---|
+| Non-core lenses: calls / cost / agent-min | 93 / $10.79 / 37 | 25 / $7.67 / 17 |
+| Core lenses: calls / cost / cost per call | 48 / $7.41 / $0.15 | 36 / $9.10 / $0.25 |
+| `software-engineer`: dispatches / cost / minutes | 12 / $8.65 / 111 | 13 / $10.74 / 130 |
+| All sub-agents | $29.03 | $29.80 |
+| Lens findings that said they could not see the change | 9 | 0 |
 
-## Reporting to the user
+Verdict: the panel trim works as designed and saves about $1.40 net per run (the core lenses got dearer per call: fewer, larger panels plus the diff file; not yet separated). It saves no wall time. `software-engineer` swings by ±20 min and ±$2 between runs, which hides any panel effect. One run per version: everything at run level is within noise until there are repeats.
 
-Telegraphic bullets and tables. Always name the harness and model of a run, explain jargon such as "checkpoint", and give verified tokens and full cost including sub-agents.
+## Leads for cutting engineering time (none tried yet)
+
+1. **Test volume.** pidt writes 6,000–7,000 test lines for 1,700–1,800 program lines; pi writes about 1,090, Claude Code none, and all score within 2 tests of each other. Cap tests at the plan's Gherkin scenarios plus one test per stated rule, and forbid tests the hidden suite would never check (internal helpers, exhaustive permutations).
+2. **TDD cadence.** The per-behaviour cycle (red, green, refactor, run tests, lint, type-check after each behaviour) explains the 21–74 turns per dispatch. The lean profile already limits per-step runs to the behaviour's tests. Options: one red/green per Gherkin scenario instead of per behaviour; refactor once per slice; lint once per slice.
+3. **Fewer dispatches.** 12–15 sequential `software-engineer` dispatches per run: one per slice plus fix rounds. Fold the error-fix round into the next slice's dispatch, or plan fewer, larger slices per checkpoint (checkpoint 2 had 5 dispatches).
+4. **Parallel slices.** Slices that touch disjoint files could run as parallel `software-engineer` dispatches (pi-dev-team has `plan-review-parallelization` and same-wave concurrency in the plan format; check whether `/build` in lean mode uses it).
+5. **Main session overhead.** 36 min on checkpoints 2–4 outside sub-agents: its own long turns, full-suite runs, lizard, git. Measure which bash calls dominate (tool timestamps in `stdout.jsonl`).
+6. **Plan phase.** Plan critics are cheap ($0.8–1.2) but sequential. Check how much wall time `/plan` takes per checkpoint before `/build` starts.
+7. **Model effort.** `software-engineer` runs at thinking high. Try medium for trivial and standard steps (PR #55's mechanism caps a dispatch's thinking below the agent's effort).
+
+Compare every idea against pi-stock (34 min, $1.64): the target is pidt's quality at well under 2 hours.
+
+## Tools
+
+- `python3 harness_eval/scripts/pidt_agent_cost.py <run dir> [checkpoints]`: cost, calls and agent-minutes per sub-agent, plus the main session.
+- `python3 harness_eval/scripts/pidt_lens_findings.py <run dir> [checkpoints]`: per-lens runs, no-issue runs, severity, low-confidence and blind findings.
+- `harness_eval/scripts/program_quality.py`: program-file-only quality (scb-check, radon, SCB ruff), run with `uv run` from the repo root.
+- Trace format (`agent/stdout.jsonl`, pi JSON events): `message_end` with `message.role` `assistant` (main session, `usage.cost.total`) or `toolResult`. A `dev_team_subagent` toolResult has `details.results[]` with `agent`, `usage.cost`, `durationMs`, `turns`, `model`. Traces reach 65 MB: pre-filter with `grep` before parsing.
+- SCB lint rules: `RUFF_SELECT_FLAGS` in `src/slop_code/metrics/languages/python/constants.py`.
+
+## Safety
+
+- Never print or commit secrets: the Claude Code token is in `~/.config/scb/cc_oauth_token`; Copilot auth only through the SCB file credential.
+- Do not touch unused Docker volumes. Old pidt bench images may be deleted.
+- Money is not a constraint for these runs, but ask before starting one.
+- Commit and push only when the user asks. Report to the user in terse fragments and tables.

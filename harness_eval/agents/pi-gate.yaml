@@ -1,0 +1,23 @@
+# Arm pi-gate: plain pi 1.3.0, no extension, ruff + lizard in the image
+# (templates/pi-gate.j2) and prompts/pi-gate.jinja (just-solve plus a static
+# quality gate). Tests whether the gate alone carries pi-dev-team's quality gain.
+#
+# version is suffixed so the image tag cannot collide with an image built
+# from SCB's stock pi/docker.j2 at version 1.3.0. The template hardcodes
+# pi 1.3.0 and ignores {{ version }}.
+#
+# Model comes from the run config (github-copilot / gpt-6.1-sol).
+type: pi
+binary: pi
+version: 1.3.0-gate
+docker_template: templates/pi-gate.j2
+provider: github-copilot
+thinking: high
+timeout: 7200
+extra_args: []
+env:
+  PI_TELEMETRY: "0"
+cost_limits:
+  cost_limit: 0
+  net_cost_limit: 0
+  step_limit: 0
