@@ -1,0 +1,21 @@
+# Arm pidt-plain: pi-dev-team installed with DEV_TEAM_REVIEW=gate, but a plain request
+# (prompts/pidt-plain.jinja: no /plan, /build or /ship). Tests whether the gate profile's
+# quality bar in the dev-team guide alone gives the pi-gate result.
+type: pi
+binary: pi
+version: 1.3.0-pdt77e3ac4-plain
+docker_template: templates/pidt-plain.j2
+provider: github-copilot
+thinking: high
+timeout: 10800
+extra_args:
+  - "-e"
+  - /opt/pi-dev-team
+env:
+  PI_TELEMETRY: "0"
+  DEV_TEAM_REVIEW: gate
+  DEV_TEAM_MAX_PARALLEL_AGENTS: "12"
+cost_limits:
+  cost_limit: 0
+  net_cost_limit: 0
+  step_limit: 0

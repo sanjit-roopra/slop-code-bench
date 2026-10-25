@@ -1,0 +1,20 @@
+# Arm pidt-lean-nolizard: agents/pidt-lean-fast.yaml with an image that has no
+# lizard (templates/pidt-nolizard.j2). Ablation of the lizard complexity gate.
+type: pi
+binary: pi
+version: 1.3.0-pdt2797f1d-nolizard
+docker_template: templates/pidt-nolizard.j2
+provider: github-copilot
+thinking: high
+timeout: 10800 # seconds; plan + build + reviewer swarm runs longer than a bare agent
+extra_args:
+  - "-e"
+  - /opt/pi-dev-team
+env:
+  PI_TELEMETRY: "0"
+  DEV_TEAM_REVIEW: lean
+  DEV_TEAM_MAX_PARALLEL_AGENTS: "12"
+cost_limits:
+  cost_limit: 0
+  net_cost_limit: 0
+  step_limit: 0

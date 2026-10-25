@@ -3,7 +3,7 @@
 #
 #   ./run.sh [options] ARM SUBSET [REPEAT]
 #
-#   ARM     cc-clean | pidt | pidt-next | pidt-opus | pidt-full | pidt-lean | pidt-lean-fast | pi-stock
+#   ARM     cc-clean | pidt | pidt-next | pidt-opus | pidt-full | pidt-lean | pidt-lean-fast | pi-stock | pi-gate[-x]
 #   SUBSET  smoke | heldout | lite_under20 | lite | full
 #           smoke   = SMOKE_PROBLEM (comma list allowed), first SMOKE_CHECKPOINTS checkpoints
 #           heldout = file_merger, layered_config_synthesizer, dynamic_buffer,
@@ -124,12 +124,20 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
-  pidt-full|pidt-lean|pidt-lean-fast)
+  pidt-full|pidt-lean|pidt-lean-fast|pidt-lean-nolizard)
     # pi-dev-team with DEV_TEAM_REVIEW=full | lean: the agent yamls differ only in env
     # vars and image tag and share one template (templates/pidt-tools.j2, adds ruff + lizard).
     AGENT_YAML="$ROOT/agents/$ARM.yaml"
     MODEL="${PIDT_MODEL:-github-copilot/gpt-6.1-sol}"
     PROMPT="$ROOT/prompts/pidt.jinja"
+    ENVIRONMENT="$ENV_PI"
+    NEEDS_PI_AUTH=1
+    ;;
+  pidt-plain)
+    # pi-dev-team (gate profile) with a plain request: no /plan, /build or /ship.
+    AGENT_YAML="$ROOT/agents/pidt-plain.yaml"
+    MODEL="${PIDT_MODEL:-github-copilot/gpt-6.1-sol}"
+    PROMPT="$ROOT/prompts/pidt-plain.jinja"
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
@@ -140,7 +148,17 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
-  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-next|pidt-opus|pidt-full|pidt-lean|pidt-lean-fast|pi-stock)" ;;
+  pi-gate|pi-gate-*)
+    # Plain pi plus a static quality gate (ruff + lizard in the image, the gate in the prompt).
+    # pi-gate-<x> variants share the image and use prompts/pi-gate-<x>.jinja.
+    AGENT_YAML="$ROOT/agents/pi-gate.yaml"
+    MODEL="${PI_STOCK_MODEL:-github-copilot/gpt-6.1-sol}"
+    PROMPT="$ROOT/prompts/$ARM.jinja"
+    [[ -f "$PROMPT" ]] || die "no prompt $PROMPT for arm $ARM"
+    ENVIRONMENT="$ENV_PI"
+    NEEDS_PI_AUTH=1
+    ;;
+  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-next|pidt-opus|pidt-full|pidt-lean|pidt-lean-fast|pidt-lean-nolizard|pidt-plain|pi-stock|pi-gate[-x])" ;;
 esac
 
 # --- Subset -> problem selection ---------------------------------------------

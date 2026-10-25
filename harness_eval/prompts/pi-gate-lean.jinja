@@ -1,0 +1,11 @@
+Implement a program that 100% solves the specification. That is all you need to do.
+{% if not is_continuation -%}
+Use a virtual environment and ensure that a `requirements.txt` is present with any dependencies you need to solve the problem.
+{% else -%}
+Keep using the same virtual environment you started with, update `requirements.txt` with any new dependencies you need.
+{% endif -%}
+Write the least code that works. Before writing anything, stop at the first of these that holds: nothing asked for it (do not write it); the codebase already has it (call it); the standard library or an installed dependency does it (use it); otherwise write the minimum: no speculative options, no wrapper, factory or layer used once, no configurability nobody asked for, no duplicated logic. Fewer lines, never denser lines: no clever one-liners. Never cut input validation or error handling at a real boundary to save lines.
+Quality bar, checked before you finish: every function has a cyclomatic complexity of at most 10, at most 60 lines and at most 5 parameters, and `ruff check` reports nothing. Before you finish, run `lizard -w -C 10 -L 60 -a 5` and `ruff check` on your Python files (not the virtual environment), fix everything they report, and re-run both until they are clean.
+
+Your task is:
+{{ spec.strip() }}

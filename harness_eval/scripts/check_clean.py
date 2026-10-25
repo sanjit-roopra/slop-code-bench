@@ -136,6 +136,11 @@ ARMS = {
     "pidt-lean": {"kind": "pi", "dev_team": True},
     "pidt-lean-fast": {"kind": "pi", "dev_team": True},
     "pi-stock": {"kind": "pi", "dev_team": False},
+    "pidt-lean-nolizard": {"kind": "pi", "dev_team": True},
+    "pi-gate": {"kind": "pi", "dev_team": False},
+    "pi-gate-lean": {"kind": "pi", "dev_team": False},
+    "pidt-solo": {"kind": "pi", "dev_team": True},
+    "pidt-plain": {"kind": "pi", "dev_team": True},
 }
 
 TRACE_NAME = "stdout.jsonl"
