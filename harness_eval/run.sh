@@ -49,7 +49,7 @@ if [[ -z "${DOCKER_HOST:-}" ]] && command -v docker >/dev/null 2>&1; then
   [[ -n "$DOCKER_HOST" ]] && export DOCKER_HOST || unset DOCKER_HOST
 fi
 
-CC_VERSION="2.1.304"
+CC_VERSION="2.1.310"
 CC_TOKEN_FILE="${CC_TOKEN_FILE:-$HOME/.config/scb/cc_oauth_token}"
 PI_AUTH_FILE="${PI_AUTH_FILE:-$HOME/.pi/agent/auth.json}"
 SMOKE_PROBLEM="${SMOKE_PROBLEM:-file_backup}"
@@ -133,9 +133,9 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
-  pidt-plain)
+  pidt-plain|pidt-plain-std)
     # pi-dev-team (gate profile) with a plain request: no /plan, /build or /ship.
-    AGENT_YAML="$ROOT/agents/pidt-plain.yaml"
+    AGENT_YAML="$ROOT/agents/$ARM.yaml"
     MODEL="${PIDT_MODEL:-github-copilot/gpt-6.1-sol}"
     PROMPT="$ROOT/prompts/pidt-plain.jinja"
     ENVIRONMENT="$ENV_PI"
@@ -158,7 +158,7 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
-  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-next|pidt-opus|pidt-full|pidt-lean|pidt-lean-fast|pidt-lean-nolizard|pidt-plain|pi-stock|pi-gate[-x])" ;;
+  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-next|pidt-opus|pidt-full|pidt-lean|pidt-lean-fast|pidt-lean-nolizard|pidt-plain[-std]|pi-stock|pi-gate[-x])" ;;
 esac
 
 # --- Subset -> problem selection ---------------------------------------------

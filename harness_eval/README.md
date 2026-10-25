@@ -17,12 +17,22 @@ Run every command below from `harness_eval/`.
 
 ## Arms
 
+> **Changes (2026-10-25):**
+> - `cc-clean` now runs **Claude Code 2.1.310** (was 2.1.304). Its stock init matches the 2.1.304 allowlist in `scripts/check_clean.py`; a run checked CLEAN.
+> - New arms `pi-gate`, `pi-gate-lean`, `pidt-plain`, `pidt-plain-std` (rows marked **new** below). `pidt-plain` uses pi-dev-team's gate profile, which is the pi-dev-team default from `0dd9142` on.
+> - The `pidt-*` arms pin pi-dev-team commits that are reachable from a tag (`eval/pdt-*`) or from `main`.
+> - Results on etl_pipeline + execution_server, all checkpoints: `pi-gate` and `pidt-plain` both strict 27.3%, isolated 72.7%, core 100%, erosion 0 ($2.79 vs $5.12); `cc-clean` 2.1.310 strict 0%, isolated 54.5%, core 81.8%, erosion 0.68.
+
 | Arm | Harness | Model (`--model`) | Agent config | Prompt | Environment |
 |-----|---------|-------------------|--------------|--------|-------------|
-| `cc-clean` (A) | Claude Code 2.1.304, stock, no plugins/MCP/user skills | `claude_code_oauth/opus-5.5` (`claude-opus-5-5`, OAuth subscription) | `agents/cc-clean.yaml` | SCB `just-solve` | SCB `docker-python3.12-uv` |
+| `cc-clean` (A) | Claude Code 2.1.310, stock, no plugins/MCP/user skills | `claude_code_oauth/opus-5.5` (`claude-opus-5-5`, OAuth subscription) | `agents/cc-clean.yaml` | SCB `just-solve` | SCB `docker-python3.12-uv` |
 | `pidt` (B) | pi 1.3.0 + pi-dev-team @ `3c34bf5` (`-e /opt/pi-dev-team`) | `github-copilot/gpt-6.1-sol` | `agents/pidt.yaml` + `templates/pidt.j2` | `prompts/pidt.jinja` (`/plan --yes` then `/build --yes`) | `environments/docker-python3.12-uv-pidt.yaml` |
 | `pidt-opus` (C, optional) | same as B | `github-copilot/copilot-claude-opus-5.5` | `agents/pidt.yaml` | `prompts/pidt.jinja` | same as B |
 | `pi-stock` (optional) | pi 1.3.0, no extension | `github-copilot/gpt-6.1-sol` | `agents/pi-stock.yaml` + `templates/pi-stock.j2` | SCB `just-solve` | same as B |
+| `pidt-full` / `pidt-lean` / `pidt-lean-fast` | pi 1.3.0 + pi-dev-team @ `9ea0b54` (tag `eval/pdt-9ea0b54`), `DEV_TEAM_REVIEW=full` / `lean`, + ruff and lizard | `github-copilot/gpt-6.1-sol` | `agents/pidt-*.yaml` + `templates/pidt-tools.j2` | `prompts/pidt.jinja` | same as B |
+| **`pi-gate`** (new) | pi 1.3.0, no extension, + ruff and lizard | `github-copilot/gpt-6.1-sol` | `agents/pi-gate.yaml` + `templates/pi-gate.j2` | `prompts/pi-gate.jinja` (just-solve + quality bar: complexity ≤10, lizard and ruff clean); `pi-gate-lean` adds the reuse ladder | same as B |
+| **`pidt-plain`** (new) | pi 1.3.0 + pi-dev-team @ `77e3ac4`, `DEV_TEAM_REVIEW=gate` | `github-copilot/gpt-6.1-sol` | `agents/pidt-plain.yaml` + `templates/pidt-plain.j2` | `prompts/pidt-plain.jinja` (plain request: no `/plan`, `/build` or `/ship`) | same as B |
+| **`pidt-plain-std`** (new) | as `pidt-plain`, pi-dev-team @ `00b5203` (gate bar + "spec silent → interface standard") | `github-copilot/gpt-6.1-sol` | `agents/pidt-plain-std.yaml` + `templates/pidt-plain-std.j2` | `prompts/pidt-plain.jinja` | same as B |
 
 All arms run with `thinking=high`. C uses the same model family as A, so A vs C
 isolates the harness; B vs pi-stock isolates the extension.
@@ -98,7 +108,7 @@ otherwise slop-code's own exit code.
 SCB stores each checkpoint's agent stdout at `<run>/<problem>/<checkpoint>/agent/stdout.jsonl`
 (or inside `agent.tar.gz`). `check_clean.py` reads every one:
 
-- Claude Code: each `system`/`init` event must list only `builtin` plugins, no MCP servers, `output_style: default`, and skills, agents and slash commands from the stock 2.1.304 allowlists (19 skills; `claude`, `Explore`, `general-purpose`, `Plan`, `statusline-setup`; 53 slash commands). Any namespaced `plugin:item` entry, an unlisted user/project command, or a different `claude_code_version` makes the run DIRTY.
+- Claude Code: each `system`/`init` event must list only `builtin` plugins, no MCP servers, `output_style: default`, and skills, agents and slash commands from the stock 2.1.310 allowlists (19 skills; `claude`, `Explore`, `general-purpose`, `Plan`, `statusline-setup`; 53 slash commands). Any namespaced `plugin:item` entry, an unlisted user/project command, or a different `claude_code_version` makes the run DIRTY.
 - pi: the system message may add only pi's builtin tools plus, for `pidt*`, the pi-dev-team tools; system-prompt sections are limited to pi's core ones plus `dev_team` (so pi's `skills`, `addendum` and `project_context` sections are DIRTY); skills may load only from `/opt/pi-dev-team`, checked in both of pi's formats (invoked `<skill name location>` blocks and the system prompt's `<location>` listing); custom messages/entries must come from pi-dev-team. `pidt*` arms also fail if pi-dev-team did not load. `pi-stock` allows no extension at all.
 - Model: `run.sh` passes `--expect-model` (`claude-opus-5-5`, `github-copilot/gpt-6.1-sol` or `github-copilot/claude-opus-5.5`, from `scripts/manifest.py expect-model`). The CC init model, every pi assistant `provider/model` and every pi-dev-team subagent model must match it, so a subagent frontmatter model swap is DIRTY.
 
