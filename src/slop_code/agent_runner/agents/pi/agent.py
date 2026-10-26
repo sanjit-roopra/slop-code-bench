@@ -56,6 +56,14 @@ _SCB_TO_PI_PROVIDER: dict[str, str] = {
     "ai_gateway": "vercel-ai-gateway",
     "vercel-ai-gateway": "vercel-ai-gateway",
     "minimax": "minimax",
+    "pi-openai": "openai",
+}
+
+# SCB file providers that read a host pi ``auth.json`` under a pi provider name
+# SCB already uses for an env-var provider (``openai`` is OPENAI_API_KEY), so
+# the SCB name differs from the ``auth.json`` entry the agent copies.
+_PI_AUTH_FILE_PROVIDERS: dict[str, str] = {
+    "pi-openai": "openai",
 }
 
 _PI_PROVIDER_NAMES = {
@@ -635,7 +643,10 @@ class PiAgent(Agent):
             self._write_converted_codex_auth(self._pi_auth_dir)
         elif (
             self.credential is not None
-            and self.credential.provider in _PI_PROVIDER_NAMES
+            and (
+                self.credential.provider in _PI_PROVIDER_NAMES
+                or self.credential.provider in _PI_AUTH_FILE_PROVIDERS
+            )
             and self.credential.credential_type == CredentialType.FILE
         ):
             self._write_pi_provider_auth(self._pi_auth_dir)
@@ -707,13 +718,17 @@ class PiAgent(Agent):
         """Copy one provider's login from a host pi ``auth.json``.
 
         Used for FILE credentials whose provider is a pi provider name (for
-        instance ``github-copilot`` pointing at ``~/.pi/agent/auth.json``).
-        pi refreshes OAuth tokens in place, so the copy stays writable.
+        instance ``github-copilot`` pointing at ``~/.pi/agent/auth.json``),
+        or listed in ``_PI_AUTH_FILE_PROVIDERS`` (``pi-openai`` copies the
+        ``openai`` entry). pi refreshes OAuth tokens in place, so the copy
+        stays writable.
         """
         if self.credential is None:
             raise AgentError("pi auth copy requires a credential")
 
-        pi_provider = self.credential.provider
+        pi_provider = _PI_AUTH_FILE_PROVIDERS.get(
+            self.credential.provider, self.credential.provider
+        )
         try:
             payload = json.loads(self.credential.value)
         except json.JSONDecodeError as e:
