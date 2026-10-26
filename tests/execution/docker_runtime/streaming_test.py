@@ -245,6 +245,49 @@ class TestDockerStreamingRuntimeEnsureContainerRunning:
             mock_docker_client_with_container.containers.create.assert_called_once()
 
 
+class TestDockerStreamingRuntimeBuildExecCommand:
+    """Tests for _build_exec_command method."""
+
+    def test_logs_exec_command_without_secret_values(
+        self,
+        docker_spec: DockerEnvironmentSpec,
+        tmp_path: Path,
+        mock_docker_client_with_container: MagicMock,
+    ) -> None:
+        """Passes secrets to docker exec but masks them in the debug log."""
+        with (
+            patch(
+                "slop_code.execution.docker_runtime.streaming.docker.from_env",
+                return_value=mock_docker_client_with_container,
+            ),
+            patch.object(streaming, "logger") as logger,
+        ):
+            runtime = DockerStreamingRuntime(
+                spec=docker_spec,
+                working_dir=tmp_path,
+                static_assets={},
+                is_evaluation=False,
+                ports={},
+                mounts={},
+                env_vars={},
+                setup_command=None,
+            )
+            args = runtime._build_exec_command(
+                "echo test",
+                {"CLAUDE_CODE_OAUTH_TOKEN": "sk-secret", "HOME": "/home/agent"},
+            )
+
+        assert "CLAUDE_CODE_OAUTH_TOKEN=sk-secret" in args
+        (logged,) = [
+            c.kwargs["args"]
+            for c in logger.debug.call_args_list
+            if c.args == ("Built docker exec command",)
+        ]
+        assert "CLAUDE_CODE_OAUTH_TOKEN=***redacted***" in logged
+        assert "HOME=/home/agent" in logged
+        assert not any("sk-secret" in arg for arg in logged)
+
+
 class TestDockerStreamingRuntimePrepareCommand:
     """Tests for _prepare_command method."""
 
