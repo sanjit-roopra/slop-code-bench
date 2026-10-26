@@ -136,12 +136,14 @@ ARMS = {
     "pidt-lean": {"kind": "pi", "dev_team": True},
     "pidt-lean-fast": {"kind": "pi", "dev_team": True},
     "pi-stock": {"kind": "pi", "dev_team": False},
+    "pi-stock-chatgpt": {"kind": "pi", "dev_team": False},
     "pidt-lean-nolizard": {"kind": "pi", "dev_team": True},
     "pi-gate": {"kind": "pi", "dev_team": False},
     "pi-gate-lean": {"kind": "pi", "dev_team": False},
     "pidt-solo": {"kind": "pi", "dev_team": True},
-    "pidt-plain": {"kind": "pi", "dev_team": True},
-    "pidt-plain-std": {"kind": "pi", "dev_team": True},
+    "pidt-gate-direct": {"kind": "pi", "dev_team": True},
+    "pidt-plain": {"kind": "pi", "dev_team": True},  # old name of pidt-gate-direct
+    "pidt-plain-std": {"kind": "pi", "dev_team": True},  # retired 2026-10-26; old results only
 }
 
 TRACE_NAME = "stdout.jsonl"

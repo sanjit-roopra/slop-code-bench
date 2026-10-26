@@ -1,10 +1,11 @@
 {#-
-  Arm pidt-plain image: templates/pidt-tools.j2 pinned to the pi-dev-team gate
-  profile (review-profile-gate). scripts/set_pdt_sha.sh does not update this file.
+  Arm pidt-gate-direct (was pidt-plain) image: templates/pidt-tools.j2 pinned to pi-dev-team main @ 0dd9142:
+  gate profile, including the "spec silent -> interface standard" sentence (00b5203).
+  scripts/set_pdt_sha.sh does not update this file.
 -#}
-{%- set PI_VERSION = "1.3.0" -%}
+{%- set PI_VERSION = "1.4.0" -%}
 {%- set PDT_REPO = "https://github.com/sanjit-roopra/pi-dev-team" -%}
-{%- set PDT_SHA = "77e3ac4408df63f8289fc85d61d58093809d7ea6" -%}
+{%- set PDT_SHA = "0dd91425bd4cb6af345c13e18fe69c1541c7d91a" -%}
 {%- set RUFF_VERSION = "0.17.1" -%}
 {%- set LIZARD_VERSION = "1.24.1" -%}
 FROM {{ base_image }}

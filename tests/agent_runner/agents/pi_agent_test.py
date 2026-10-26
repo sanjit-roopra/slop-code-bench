@@ -945,6 +945,30 @@ class TestPiAgent:
         with pytest.raises(AgentError, match="Failed to parse pi auth JSON"):
             agent.setup(cast("Session", session))
 
+    def test_setup_with_pi_openai_file_auth_copies_only_openai_entry(
+        self,
+        tmp_path: Path,
+        mock_cost_limits: AgentCostLimits,
+        mock_pricing: APIPricing,
+    ) -> None:
+        openai_entry = {"type": "oauth", "access": "chatgpt-access"}
+        host_auth = {
+            "openai": openai_entry,
+            "github-copilot": {"type": "oauth", "access": "copilot-secret"},
+        }
+        credential = self._pi_auth_credential(
+            "pi-openai", json.dumps(host_auth), tmp_path
+        )
+        session = FakeSession(runtime=FakeRuntime(), working_dir=tmp_path)
+        agent = self._copilot_agent(credential, mock_cost_limits, mock_pricing)
+
+        agent.setup(cast("Session", session))
+
+        assert agent._pi_auth_dir is not None
+        auth_path = agent._pi_auth_dir / "auth.json"
+        assert json.loads(auth_path.read_text()) == {"openai": openai_entry}
+        assert "copilot-secret" not in auth_path.read_text()
+
     def test_extract_pi_provider_auth_rejects_non_object_entry(self) -> None:
         with pytest.raises(AgentError, match="no 'github-copilot' entry"):
             PiAgent._extract_pi_provider_auth(
@@ -1650,6 +1674,35 @@ class TestPiCopilotCatalog:
         assert agent.provider == "github-copilot"
         assert agent.model == pi_model
         assert agent.models_json is None
+
+    def test_pi_openai_builds_pi_agent_on_openai(
+        self, mock_cost_limits: AgentCostLimits
+    ) -> None:
+        provider = ProviderCatalog.get("pi-openai")
+        assert provider is not None
+        assert provider.credential_type == CredentialType.FILE
+        assert provider.file_path == "~/.pi/agent/auth.json"
+        override = parse_model_override("pi-openai/gpt-6.1-sol")
+        credential = ProviderCredential(
+            provider=override.provider,
+            credential_type=CredentialType.FILE,
+            value="{}",
+            source="auth.json",
+            destination_key="",
+        )
+        agent = PiAgent._from_config(
+            config=PiConfig(
+                type="pi", version="1.3.0", cost_limits=mock_cost_limits
+            ),
+            model=override.model_def,
+            credential=credential,
+            problem_name="test-problem",
+            verbose=False,
+            image="test-image",
+        )
+        assert isinstance(agent, PiAgent)
+        assert agent.provider == "openai"
+        assert agent.model == "gpt-6.1-sol"
 
     def test_gpt_6_1_sol_uses_prompt_tier_under_272k(self) -> None:
         model = ModelCatalog.get("gpt-6.1-sol")

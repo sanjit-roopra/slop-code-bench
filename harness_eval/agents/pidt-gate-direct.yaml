@@ -1,10 +1,10 @@
-# Arm pidt-plain: pi-dev-team installed with DEV_TEAM_REVIEW=gate, but a plain request
-# (prompts/pidt-plain.jinja: no /plan, /build or /ship). Tests whether the gate profile's
+# Arm pidt-gate-direct (was pidt-plain): pi-dev-team installed with DEV_TEAM_REVIEW=gate,
+# but a direct request (prompts/pidt-gate-direct.jinja: no /plan, /build or /ship). Tests whether the gate profile's
 # quality bar in the dev-team guide alone gives the pi-gate result.
 type: pi
 binary: pi
-version: 1.3.0-pdt77e3ac4-plain
-docker_template: templates/pidt-plain.j2
+version: 1.4.0-pdt0dd9142-plain
+docker_template: templates/pidt-gate-direct.j2
 provider: github-copilot
 thinking: high
 timeout: 10800

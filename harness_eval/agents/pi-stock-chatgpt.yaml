@@ -1,0 +1,22 @@
+# Arm pi-stock on a ChatGPT subscription instead of GitHub Copilot: same image
+# (templates/pi-stock.j2, same version tag), same prompt. Only the provider
+# differs. Measures subscription usage (5-hour and weekly limits) per run.
+#
+# Model comes from the run config (pi-openai/gpt-6.1-sol). pi-openai is the SCB
+# file provider that copies the host pi auth.json "openai" entry (ChatGPT
+# login) into the container; pi itself runs it as provider openai, where
+# gpt-6.1-sol has a 272k context (1.1M on Copilot).
+type: pi
+binary: pi
+version: 1.4.0-stock
+docker_template: templates/pi-stock.j2
+provider: openai
+thinking: high
+timeout: 7200
+extra_args: []
+env:
+  PI_TELEMETRY: "0"
+cost_limits:
+  cost_limit: 0
+  net_cost_limit: 0
+  step_limit: 0
