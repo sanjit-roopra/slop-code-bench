@@ -161,6 +161,7 @@ def test_run_config_resolves_to_arm_model_without_override(run_config: Path):
         ("pidt", "github-copilot/gpt-6.1-sol", "github-copilot/gpt-6.1-sol"),
         ("pidt", "github-copilot/copilot-claude-opus-5.5", "github-copilot/claude-opus-5.5"),
         ("pi-stock", "github-copilot/gpt-6.1-sol", "github-copilot/gpt-6.1-sol"),
+        ("pi-stock-chatgpt", "pi-openai/gpt-6.1-sol", "openai/gpt-6.1-sol"),
     ],
 )
 def test_expected_runtime_model(agent: str, model: str, expected: str):

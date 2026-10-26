@@ -174,3 +174,11 @@ providers:
     description: >-
       pi auth file holding a GitHub Copilot login (pi /login github-copilot);
       the pi agent copies only the github-copilot entry into the container
+
+  pi-openai:
+    type: file
+    file_path: ~/.pi/agent/auth.json
+    description: >-
+      pi auth file holding a ChatGPT subscription login (pi /login, stored
+      under the openai entry); the pi agent copies only that entry into the
+      container. Named pi-openai because openai is the OPENAI_API_KEY provider

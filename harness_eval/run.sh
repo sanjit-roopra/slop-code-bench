@@ -3,7 +3,7 @@
 #
 #   ./run.sh [options] ARM SUBSET [REPEAT]
 #
-#   ARM     cc-clean | pidt | pidt-next | pidt-opus | pidt-full | pidt-lean | pidt-lean-fast | pi-stock | pi-gate[-x]
+#   ARM     cc-clean | pidt | pidt-next | pidt-opus | pidt-full | pidt-lean | pidt-lean-fast | pi-stock | pi-stock-chatgpt | pi-gate[-x]
 #   SUBSET  smoke | heldout | lite_under20 | lite | full
 #           smoke   = SMOKE_PROBLEM (comma list allowed), first SMOKE_CHECKPOINTS checkpoints
 #           heldout = file_merger, layered_config_synthesizer, dynamic_buffer,
@@ -82,7 +82,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ ${#POSITIONAL[@]} -ge 2 && ${#POSITIONAL[@]} -le 3 ]] || { usage >&2; exit 2; }
-ARM="${POSITIONAL[0]}"
+# Old arm names that still resolve (renamed 2026-10-26: <base>-<profile>-<workflow>).
+arm_alias() {
+  case "$1" in
+    pidt-plain) echo pidt-gate-direct ;;
+    *) echo "$1" ;;
+  esac
+}
+ARM="$(arm_alias "${POSITIONAL[0]}")"
 SUBSET="${POSITIONAL[1]}"
 REPEAT="${POSITIONAL[2]:-1}"
 [[ "$REPEAT" =~ ^[1-9][0-9]*$ ]] || die "REPEAT must be a positive integer, got '$REPEAT'"
@@ -133,17 +140,25 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
-  pidt-plain|pidt-plain-std)
-    # pi-dev-team (gate profile) with a plain request: no /plan, /build or /ship.
+  pidt-gate-direct)
+    # pi-dev-team, gate profile, direct workflow: a plain request, no /plan, /build or /ship.
     AGENT_YAML="$ROOT/agents/$ARM.yaml"
     MODEL="${PIDT_MODEL:-github-copilot/gpt-6.1-sol}"
-    PROMPT="$ROOT/prompts/pidt-plain.jinja"
+    PROMPT="$ROOT/prompts/pidt-gate-direct.jinja"
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
   pi-stock)
     AGENT_YAML="$ROOT/agents/pi-stock.yaml"
     MODEL="${PI_STOCK_MODEL:-github-copilot/gpt-6.1-sol}"
+    PROMPT="just-solve"
+    ENVIRONMENT="$ENV_PI"
+    NEEDS_PI_AUTH=1
+    ;;
+  pi-stock-chatgpt)
+    # pi-stock on the ChatGPT subscription (pi auth.json "openai" entry).
+    AGENT_YAML="$ROOT/agents/pi-stock-chatgpt.yaml"
+    MODEL="${PI_STOCK_MODEL:-pi-openai/gpt-6.1-sol}"
     PROMPT="just-solve"
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
@@ -158,7 +173,7 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
-  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-next|pidt-opus|pidt-full|pidt-lean|pidt-lean-fast|pidt-lean-nolizard|pidt-plain[-std]|pi-stock|pi-gate[-x])" ;;
+  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-next|pidt-opus|pidt-full|pidt-lean|pidt-lean-fast|pidt-lean-nolizard|pidt-gate-direct (was pidt-plain)|pi-stock|pi-stock-chatgpt|pi-gate[-x])" ;;
 esac
 
 # --- Subset -> problem selection ---------------------------------------------
@@ -204,7 +219,7 @@ if [[ -n "$RESUME" ]]; then
   [[ -f "$SAVED_MANIFEST" ]] || die "--resume: no manifest.json in $RUN_DIR (not a run.sh run dir?)"
   saved_arm="$(jq -r '.arm // empty' "$SAVED_MANIFEST")"
   saved_subset="$(jq -r '.subset // empty' "$SAVED_MANIFEST")"
-  [[ "$saved_arm" == "$ARM" ]] || die "--resume: $RUN_DIR was run as arm '$saved_arm', not '$ARM'"
+  [[ "$(arm_alias "$saved_arm")" == "$ARM" ]] || die "--resume: $RUN_DIR was run as arm '$saved_arm', not '$ARM'"
   [[ "$saved_subset" == "$SUBSET" ]] || die "--resume: $RUN_DIR was run as subset '$saved_subset', not '$SUBSET'"
   SAVED_EXPECT_MODEL="$(jq -r '.model.expected_runtime // empty' "$SAVED_MANIFEST")"
   saved_model="$(jq -r '.model.cli // empty' "$SAVED_MANIFEST")"
@@ -258,12 +273,16 @@ if [[ $NEEDS_CC_TOKEN -eq 1 ]]; then
   fi
 fi
 if [[ $NEEDS_PI_AUTH -eq 1 ]]; then
-  if [[ -f "$PI_AUTH_FILE" ]] && jq -e 'has("github-copilot")' "$PI_AUTH_FILE" >/dev/null 2>&1; then
-    cred_status="github-copilot entry present in $PI_AUTH_FILE"
+  # The auth.json entry the agent copies: the model's provider, except
+  # pi-openai, which reads pi's "openai" (ChatGPT) login.
+  PI_AUTH_ENTRY="${MODEL%%/*}"
+  [[ "$PI_AUTH_ENTRY" == pi-openai ]] && PI_AUTH_ENTRY=openai
+  if [[ -f "$PI_AUTH_FILE" ]] && jq -e --arg k "$PI_AUTH_ENTRY" 'has($k)' "$PI_AUTH_FILE" >/dev/null 2>&1; then
+    cred_status="$PI_AUTH_ENTRY entry present in $PI_AUTH_FILE"
   elif [[ $DRY_RUN -eq 1 ]]; then
-    cred_status="MISSING github-copilot entry in $PI_AUTH_FILE"
+    cred_status="MISSING $PI_AUTH_ENTRY entry in $PI_AUTH_FILE"
   else
-    die "no github-copilot login in $PI_AUTH_FILE (run: pi, then /login github-copilot)"
+    die "no $PI_AUTH_ENTRY login in $PI_AUTH_FILE (run: pi, then /login $PI_AUTH_ENTRY)"
   fi
 fi
 
