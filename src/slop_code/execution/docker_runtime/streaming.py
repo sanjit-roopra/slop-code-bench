@@ -19,6 +19,7 @@ import docker
 from docker.errors import APIError
 from docker.errors import DockerException
 
+from slop_code.common import mask_sensitive_values
 from slop_code.execution.assets import ResolvedStaticAsset
 from slop_code.execution.docker_runtime.models import DockerEnvironmentSpec
 from slop_code.execution.models import EnvironmentSpec
@@ -311,19 +312,28 @@ class DockerStreamingRuntime(StreamingRuntime):
         """Build docker exec command arguments."""
         container = self._ensure_container_running()
         exec_env = self.spec.get_full_env(self._merge_env(env))
+        args = self._exec_args(container.id, command, exec_env)
+        logger.debug(
+            "Built docker exec command",
+            args=self._exec_args(
+                container.id, command, mask_sensitive_values(exec_env)
+            ),
+            verbose=True,
+        )
+        return args
+
+    def _exec_args(
+        self, container_id: str, command: str, exec_env: dict[str, str]
+    ) -> list[str]:
+        """Assemble docker exec arguments for the given environment."""
         args: list[str] = [self.spec.docker.binary, "exec"]
         args.extend(["--workdir", self._container_workdir()])
         if self.user:
             args.extend(["--user", self.user])
         for key, value in exec_env.items():
             args.extend(["--env", f"{key}={value}"])
-        args.append(container.id)
+        args.append(container_id)
         args.extend(["/bin/sh", "-c", command])
-        logger.debug(
-            "Built docker exec command",
-            args=args,
-            verbose=True,
-        )
         return args
 
     def _start_exec_process(
