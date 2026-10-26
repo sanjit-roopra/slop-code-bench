@@ -19,7 +19,7 @@ Run every command below from `harness_eval/`.
 
 > **Changes (2026-10-25):**
 > - `cc-clean` now runs **Claude Code 2.1.310** (was 2.1.304). Its stock init matches the 2.1.304 allowlist in `scripts/check_clean.py`; a run checked CLEAN.
-> - New arms `pi-gate`, `pi-gate-lean`, `pidt-plain`, `pidt-plain-std` (rows marked **new** below). `pidt-plain` uses pi-dev-team's gate profile, which is the pi-dev-team default from `0dd9142` on.
+> - New arms `pi-gate`, `pi-gate-lean`, `pidt-plain` (rows marked **new** below). `pidt-plain` was renamed `pidt-gate-direct` on 2026-10-26 (pi-dev-team, gate profile, direct workflow; the old name still works in `run.sh`). `pidt-plain-std` was retired the same day: `pidt-gate-direct` now pins pi-dev-team `main` (`0dd9142`), which includes its standards sentence. `pidt-plain` uses pi-dev-team's gate profile, which is the pi-dev-team default from `0dd9142` on.
 > - The `pidt-*` arms pin pi-dev-team commits that are reachable from a tag (`eval/pdt-*`) or from `main`.
 > - Results on etl_pipeline + execution_server, all checkpoints: `pi-gate` and `pidt-plain` both strict 27.3%, isolated 72.7%, core 100%, erosion 0 ($2.79 vs $5.12); `cc-clean` 2.1.310 strict 0%, isolated 54.5%, core 81.8%, erosion 0.68.
 
@@ -31,8 +31,7 @@ Run every command below from `harness_eval/`.
 | `pi-stock` (optional) | pi 1.3.0, no extension | `github-copilot/gpt-6.1-sol` | `agents/pi-stock.yaml` + `templates/pi-stock.j2` | SCB `just-solve` | same as B |
 | `pidt-full` / `pidt-lean` / `pidt-lean-fast` | pi 1.3.0 + pi-dev-team @ `9ea0b54` (tag `eval/pdt-9ea0b54`), `DEV_TEAM_REVIEW=full` / `lean`, + ruff and lizard | `github-copilot/gpt-6.1-sol` | `agents/pidt-*.yaml` + `templates/pidt-tools.j2` | `prompts/pidt.jinja` | same as B |
 | **`pi-gate`** (new) | pi 1.3.0, no extension, + ruff and lizard | `github-copilot/gpt-6.1-sol` | `agents/pi-gate.yaml` + `templates/pi-gate.j2` | `prompts/pi-gate.jinja` (just-solve + quality bar: complexity ≤10, lizard and ruff clean); `pi-gate-lean` adds the reuse ladder | same as B |
-| **`pidt-plain`** (new) | pi 1.3.0 + pi-dev-team @ `77e3ac4`, `DEV_TEAM_REVIEW=gate` | `github-copilot/gpt-6.1-sol` | `agents/pidt-plain.yaml` + `templates/pidt-plain.j2` | `prompts/pidt-plain.jinja` (plain request: no `/plan`, `/build` or `/ship`) | same as B |
-| **`pidt-plain-std`** (new) | as `pidt-plain`, pi-dev-team @ `00b5203` (gate bar + "spec silent → interface standard") | `github-copilot/gpt-6.1-sol` | `agents/pidt-plain-std.yaml` + `templates/pidt-plain-std.j2` | `prompts/pidt-plain.jinja` | same as B |
+| **`pidt-gate-direct`** (was `pidt-plain`) | pi 1.4.0 + pi-dev-team `main` @ `0dd9142` (gate bar + "spec silent → interface standard", `00b5203`), `DEV_TEAM_REVIEW=gate` | `github-copilot/gpt-6.1-sol` | `agents/pidt-gate-direct.yaml` + `templates/pidt-gate-direct.j2` | `prompts/pidt-gate-direct.jinja` (plain request: no `/plan`, `/build` or `/ship`) | same as B |
 
 All arms run with `thinking=high`. C uses the same model family as A, so A vs C
 isolates the harness; B vs pi-stock isolates the extension.
