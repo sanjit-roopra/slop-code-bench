@@ -1,0 +1,24 @@
+# Arm pidt-gate-examples7 (v7, pi-dev-team executable-spec branch): v6 plus executable spec mode
+# (DEV_TEAM_EXAMPLES=spec). Before code, a scenario-author subagent that sees only the saved
+# requests writes quoted and derived acceptance cases (every spec rule covered or skipped with a
+# reason); dev_team_freeze_cases runs them red and freezes them in .dev-team/requests/.frozen.json,
+# so the implementing session cannot edit them; scripts/example_replay.py must then exit 0.
+type: pi
+binary: pi
+version: 1.4.0-pdtd1dcadf-examples7
+docker_template: templates/pidt-gate-examples7.j2
+provider: github-copilot
+thinking: high
+timeout: 10800
+extra_args:
+  - "-e"
+  - /opt/pi-dev-team
+env:
+  PI_TELEMETRY: "0"
+  DEV_TEAM_REVIEW: gate
+  DEV_TEAM_EXAMPLES: spec
+  DEV_TEAM_MAX_PARALLEL_AGENTS: "12"
+cost_limits:
+  cost_limit: 0
+  net_cost_limit: 0
+  step_limit: 0
