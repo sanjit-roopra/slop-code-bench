@@ -104,6 +104,13 @@ def test_run_sh_rejects_bad_args(args):
     assert proc.returncode == 2
 
 
+def test_run_sh_cc_version_matches_cc_clean_agent():
+    match = re.search(r'^CC_VERSION="([^"]+)"$', (ROOT / "run.sh").read_text(), re.M)
+    assert match, "CC_VERSION not found in run.sh"
+    agent = yaml.safe_load((ROOT / "agents" / "cc-clean.yaml").read_text())
+    assert str(agent["version"]) == match.group(1)
+
+
 @pytest.mark.skipif(shutil.which("uv") is None, reason="uv not installed")
 def test_run_sh_dry_run_resolves_pidt_smoke():
     proc = subprocess.run(
@@ -158,6 +165,7 @@ def test_run_config_resolves_to_arm_model_without_override(run_config: Path):
     ("agent", "model", "expected"),
     [
         ("cc-clean", "claude_code_oauth/opus-5.5", "claude-opus-5-5"),
+        ("cc-clean", "claude_code_oauth/fable-5.2", "claude-fable-5-2"),
         ("pidt", "github-copilot/gpt-6.1-sol", "github-copilot/gpt-6.1-sol"),
         ("pidt", "github-copilot/copilot-claude-opus-5.5", "github-copilot/claude-opus-5.5"),
         ("pi-stock", "github-copilot/gpt-6.1-sol", "github-copilot/gpt-6.1-sol"),

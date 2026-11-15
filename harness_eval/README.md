@@ -18,7 +18,7 @@ Run every command below from `harness_eval/`.
 ## Arms
 
 > **Changes (2026-11-15):**
-> - `cc-clean` now runs **Claude Code 2.1.325** (was 2.1.310). Its stock init has the same skills and agents as the 2.1.310 allowlist in `scripts/check_clean.py` and one slash command fewer (`advisor` is gone); a full run checked CLEAN.
+> - `cc-clean` now runs **Claude Code 2.1.325** (was 2.1.310). Its stock init has the same skills and agents as the 2.1.310 allowlist in `scripts/check_clean.py` and one slash command fewer (`advisor` is gone; the clean check now allows it only for older versions). A full run stopped at 174 of 196 checkpoints checked CLEAN (174 traces).
 > - New model config `configs/models/fable-5.2.yaml` (`claude-fable-5-2`, API list price $8 / $40 per million tokens). Run it with `CC_MODEL=claude_code_oauth/fable-5.2 ./run.sh cc-clean ...`.
 >
 > **Changes (2026-10-25):**
@@ -113,7 +113,7 @@ SCB stores each checkpoint's agent stdout at `<run>/<problem>/<checkpoint>/agent
 
 - Claude Code: each `system`/`init` event must list only `builtin` plugins, no MCP servers, `output_style: default`, and skills, agents and slash commands from the stock allowlists (19 skills; `claude`, `Explore`, `general-purpose`, `Plan`, `statusline-setup`; 53 slash commands in 2.1.310, 52 in 2.1.325). Any namespaced `plugin:item` entry, an unlisted user/project command, or a different `claude_code_version` makes the run DIRTY.
 - pi: the system message may add only pi's builtin tools plus, for `pidt*`, the pi-dev-team tools; system-prompt sections are limited to pi's core ones plus `dev_team` (so pi's `skills`, `addendum` and `project_context` sections are DIRTY); skills may load only from `/opt/pi-dev-team`, checked in both of pi's formats (invoked `<skill name location>` blocks and the system prompt's `<location>` listing); custom messages/entries must come from pi-dev-team. `pidt*` arms also fail if pi-dev-team did not load. `pi-stock` allows no extension at all.
-- Model: `run.sh` passes `--expect-model` (`claude-opus-5-5`, `github-copilot/gpt-6.1-sol` or `github-copilot/claude-opus-5.5`, from `scripts/manifest.py expect-model`). The CC init model, every pi assistant `provider/model` and every pi-dev-team subagent model must match it, so a subagent frontmatter model swap is DIRTY.
+- Model: `run.sh` passes `--expect-model` (`claude-opus-5-5`, `claude-fable-5-2` with `CC_MODEL=claude_code_oauth/fable-5.2`, `github-copilot/gpt-6.1-sol` or `github-copilot/claude-opus-5.5`, from `scripts/manifest.py expect-model`). The CC init model, every pi assistant `provider/model` and every pi-dev-team subagent model must match it, so a subagent frontmatter model swap is DIRTY.
 
 A DIRTY run must be excluded from comparisons.
 

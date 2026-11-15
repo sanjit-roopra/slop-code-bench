@@ -12,7 +12,7 @@ pricing:
 thinking_style: effort
 aliases:
   - claude-fable-5.2
-  - claude-fable-5-2
+  - fable-5.2
 
 agent_specific:
   claude_code:
