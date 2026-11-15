@@ -1,0 +1,23 @@
+# Arm pidt-gate-examples8 (v8, pi-dev-team b9967b7: v6 behaviour on the v7 code base, DEV_TEAM_EXAMPLES=on, no
+# scenario-author and no freeze). Adds four rules to the guide: configuration/data blocks and first-run or empty
+# states become derived cases; every solver or retry loop gets a limit; error text uses the request's nouns.
+# The request guard no longer blocks scripts that only read .dev-team/examples.json.
+type: pi
+binary: pi
+version: 1.4.0-pdtb9967b7-examples8
+docker_template: templates/pidt-gate-examples8.j2
+provider: github-copilot
+thinking: high
+timeout: 10800
+extra_args:
+  - "-e"
+  - /opt/pi-dev-team
+env:
+  PI_TELEMETRY: "0"
+  DEV_TEAM_REVIEW: gate
+  DEV_TEAM_EXAMPLES: "on"
+  DEV_TEAM_MAX_PARALLEL_AGENTS: "12"
+cost_limits:
+  cost_limit: 0
+  net_cost_limit: 0
+  step_limit: 0

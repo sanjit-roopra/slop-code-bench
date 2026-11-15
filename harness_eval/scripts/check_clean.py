@@ -143,6 +143,23 @@ ARMS = {
     "pidt-solo": {"kind": "pi", "dev_team": True},
     "pidt-gate-direct": {"kind": "pi", "dev_team": True},
     "pidt-plain": {"kind": "pi", "dev_team": True},  # old name of pidt-gate-direct
+    "pidt-gate-examples": {"kind": "pi", "dev_team": True},
+    "pidt-gate-examples2": {"kind": "pi", "dev_team": True},
+    "pidt-gate-examples3": {"kind": "pi", "dev_team": True},
+    # v5 (pi-dev-team 2004010) registers dev_team_approve_examples under DEV_TEAM_EXAMPLES=on.
+    "pidt-gate-examples5": {"kind": "pi", "dev_team": True, "extra_tools": ["dev_team_approve_examples"]},
+    # v6 (pi-dev-team cf27e9a): saved requests in .dev-team/requests, statement-level request guard.
+    "pidt-gate-examples6": {"kind": "pi", "dev_team": True, "extra_tools": ["dev_team_approve_examples"]},
+    # v7 (pi-dev-team executable-spec): DEV_TEAM_EXAMPLES=spec also registers dev_team_freeze_cases.
+    # Its scenario-author subagent is dispatched through dev_team_subagent and logs a
+    # dev-team-subagent-usage entry, which the generic pi-dev-team checks already accept.
+    "pidt-gate-examples7": {
+        "kind": "pi",
+        "dev_team": True,
+        "extra_tools": ["dev_team_approve_examples", "dev_team_freeze_cases"],
+    },
+    # v8 (pi-dev-team examples-v8): the v7 code base under DEV_TEAM_EXAMPLES=on, so no freeze tool.
+    "pidt-gate-examples8": {"kind": "pi", "dev_team": True, "extra_tools": ["dev_team_approve_examples"]},
     "pidt-plain-std": {"kind": "pi", "dev_team": True},  # retired 2026-10-26; old results only
 }
 
@@ -320,9 +337,10 @@ def check_pi_events(
     path: str = "<events>",
     dev_team: bool = True,
     expect_model: str | None = None,
+    extra_tools: Iterable[str] = (),
 ) -> TraceResult:
     result = TraceResult(path=path)
-    allowed_tools = PI_BUILTIN_TOOLS | (PDT_TOOLS if dev_team else frozenset())
+    allowed_tools = PI_BUILTIN_TOOLS | (PDT_TOOLS if dev_team else frozenset()) | frozenset(extra_tools)
     allowed_sections = PI_CORE_SECTIONS | (PDT_SECTIONS if dev_team else frozenset())
     allowed_skill_roots = (PDT_ROOT.rstrip("/") + "/",) if dev_team else ()
 
@@ -454,7 +472,8 @@ def check_trace(
             events, path, expect_version=expect_cc_version, expect_model=expect_model
         )
     return check_pi_events(
-        events, path, dev_team=bool(spec.get("dev_team")), expect_model=expect_model
+        events, path, dev_team=bool(spec.get("dev_team")), expect_model=expect_model,
+        extra_tools=spec.get("extra_tools", ()),
     )
 
 

@@ -136,6 +136,71 @@ def test_pi_extra_extension_is_dirty():
     assert "'other-ext-start'" in joined
 
 
+def _v7_trace_lines() -> list[str]:
+    """Real pidt trace plus what a v7 (DEV_TEAM_EXAMPLES=spec) session adds."""
+    events = copy.deepcopy(_events("pi_pidt_clean.jsonl"))
+    for e in events:
+        msg = e.get("message") or {}
+        if msg.get("role") == "system":
+            msg["toolsAdded"] += [{"name": "dev_team_approve_examples"}, {"name": "dev_team_freeze_cases"}]
+    model = "github-copilot/gpt-6.1-sol"
+    events += [
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "provider": "github-copilot",
+                "model": "gpt-6.1-sol",
+                "content": [
+                    {
+                        "type": "toolCall",
+                        "name": "dev_team_subagent",
+                        "arguments": {"agent": "scenario-author", "task": ".dev-team/requests/0001.md"},
+                    },
+                    {"type": "toolCall", "name": "dev_team_freeze_cases", "arguments": {}},
+                ],
+            },
+        },
+        {
+            "type": "entry_appended",
+            "entry": {
+                "type": "custom",
+                "customType": "dev-team-subagent-usage",
+                "data": {"agent": "scenario-author", "model": model, "ok": True, "usage": {"cost": 0.1}},
+            },
+        },
+        {
+            "type": "message_end",
+            "message": {
+                "role": "toolResult",
+                "toolName": "dev_team_subagent",
+                "details": {"results": [{"agent": "scenario-author", "model": model}]},
+            },
+        },
+        {
+            "type": "message_end",
+            "message": {"role": "toolResult", "toolName": "dev_team_freeze_cases", "content": "frozen 5"},
+        },
+    ]
+    return [json.dumps(e) for e in events]
+
+
+def test_v7_trace_with_freeze_and_scenario_author_is_clean():
+    r = cc.check_trace(
+        _v7_trace_lines(), "pidt-gate-examples7", "<v7>", None, expect_model="github-copilot/gpt-6.1-sol"
+    )
+    assert r.status == "CLEAN", r.reasons
+    assert "dev_team_freeze_cases" in r.info["tools"]
+
+
+def test_v7_trace_is_dirty_for_v6_arm():
+    r = cc.check_trace(_v7_trace_lines(), "pidt-gate-examples6", "<v7>", None)
+    assert r.status == "DIRTY"
+    joined = "\n".join(r.reasons)
+    assert "tool 'dev_team_freeze_cases' from an unexpected extension" in joined
+    assert "call to unexpected tool 'dev_team_freeze_cases'" in joined
+
+
 def test_pidt_arm_without_dev_team_loaded_is_dirty():
     events = [
         {

@@ -1,0 +1,22 @@
+# Arm pidt-gate-examples2 (v2, pi-dev-team d7ed319): pidt-gate-direct plus the opt-in example check (
+# DEV_TEAM_EXAMPLES=on): typed requests saved word for word, the agent copies the spec's examples
+# into .dev-team/examples.json and runs scripts/example_replay.py until it exits 0.
+type: pi
+binary: pi
+version: 1.4.0-pdtd7ed319-examples2
+docker_template: templates/pidt-gate-examples2.j2
+provider: github-copilot
+thinking: high
+timeout: 10800
+extra_args:
+  - "-e"
+  - /opt/pi-dev-team
+env:
+  PI_TELEMETRY: "0"
+  DEV_TEAM_REVIEW: gate
+  DEV_TEAM_EXAMPLES: "on"
+  DEV_TEAM_MAX_PARALLEL_AGENTS: "12"
+cost_limits:
+  cost_limit: 0
+  net_cost_limit: 0
+  step_limit: 0

@@ -53,6 +53,7 @@ CC_VERSION="2.1.310"
 CC_TOKEN_FILE="${CC_TOKEN_FILE:-$HOME/.config/scb/cc_oauth_token}"
 PI_AUTH_FILE="${PI_AUTH_FILE:-$HOME/.pi/agent/auth.json}"
 SMOKE_PROBLEM="${SMOKE_PROBLEM:-file_backup}"
+SMOKE_CHECKPOINTS_SET="${SMOKE_CHECKPOINTS:+1}"
 SMOKE_CHECKPOINTS="${SMOKE_CHECKPOINTS:-2}"
 HELDOUT_CHECKPOINTS="${HELDOUT_CHECKPOINTS:-2}"
 # Held-out dev set for pi-dev-team variants: never used while tuning (file_backup was).
@@ -140,8 +141,9 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
-  pidt-gate-direct)
+  pidt-gate-direct|pidt-gate-examples|pidt-gate-examples2|pidt-gate-examples3|pidt-gate-examples5|pidt-gate-examples6|pidt-gate-examples7|pidt-gate-examples8)
     # pi-dev-team, gate profile, direct workflow: a plain request, no /plan, /build or /ship.
+    # pidt-gate-examples adds the opt-in example check (DEV_TEAM_EXAMPLES=on, its own image).
     AGENT_YAML="$ROOT/agents/$ARM.yaml"
     MODEL="${PIDT_MODEL:-github-copilot/gpt-6.1-sol}"
     PROMPT="$ROOT/prompts/pidt-gate-direct.jinja"
@@ -173,7 +175,7 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
-  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-next|pidt-opus|pidt-full|pidt-lean|pidt-lean-fast|pidt-lean-nolizard|pidt-gate-direct (was pidt-plain)|pi-stock|pi-stock-chatgpt|pi-gate[-x])" ;;
+  *) die "unknown ARM '$ARM' (cc-clean|pidt|pidt-next|pidt-opus|pidt-full|pidt-lean|pidt-lean-fast|pidt-lean-nolizard|pidt-gate-direct (was pidt-plain)|pidt-gate-examples[2|3|5|6|7]|pi-stock|pi-stock-chatgpt|pi-gate[-x])" ;;
 esac
 
 # --- Subset -> problem selection ---------------------------------------------
@@ -189,6 +191,9 @@ case "$SUBSET" in
     if [[ "$SUBSET" == smoke ]]; then
       IFS=, read -ra CATALOG_PROBLEMS <<< "$SMOKE_PROBLEM"
       CATALOG_CHECKPOINTS="$SMOKE_CHECKPOINTS"
+      # The example-check arms it is compared with (scripts/cmp_versions.py) ran 8 checkpoints per problem.
+      [[ "$ARM" == pidt-gate-examples* && -z "$SMOKE_CHECKPOINTS_SET" ]] &&
+        warn "SMOKE_CHECKPOINTS unset: running $SMOKE_CHECKPOINTS checkpoints per problem; the v1/v5/v6 runs cmp_versions.py compares against used SMOKE_CHECKPOINTS=8"
       catalog_name="${SMOKE_PROBLEM//,/+}"
     else
       CATALOG_PROBLEMS=("${HELDOUT_PROBLEMS[@]}")

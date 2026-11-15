@@ -23,7 +23,7 @@ AGENT_YAML="${1:-$ROOT/agents/pidt-next.yaml}"
 PDT_CHECKOUT="${2:-$ROOT/../../../personal/pi-dev-team}"
 SCB="${SCB:-$(cd "$ROOT/.." && pwd)}"
 ENV_NAME="python3.12"
-BASE_IMAGE="slop-code:pi-1.3.0-pdt3c34bf5-$ENV_NAME"
+BASE_IMAGE="${BASE_IMAGE:-slop-code:pi-1.3.0-pdt3c34bf5-$ENV_NAME}"
 
 die() { echo "build_pidt_local: $*" >&2; exit 2; }
 
