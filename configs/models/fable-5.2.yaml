@@ -1,0 +1,29 @@
+# Claude Fable 5.2 API list price per million tokens: input $8, output $40,
+# cache read $0.20. Cache write is the 5-minute rate, 1.25x input.
+# Runs through the Claude Code subscription report this as a notional cost only.
+internal_name: claude-fable-5-2
+provider: anthropic
+pricing:
+  input: 8
+  output: 40
+  cache_read: 0.2
+  cache_write: 10
+# Claude 5 family: adaptive thinking, steered by effort level.
+thinking_style: effort
+aliases:
+  - claude-fable-5.2
+  - claude-fable-5-2
+
+agent_specific:
+  claude_code:
+    endpoint: anthropic
+
+  mini_swe:
+    model_name: anthropic/claude-fable-5-2
+    model_class: litellm
+
+  codex:
+    thinking: high
+
+  opencode:
+    provider_name: anthropic

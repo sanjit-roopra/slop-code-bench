@@ -6,7 +6,7 @@
 * Claude Code arms (cc-clean): every ``system``/``init`` event in the
   stream-json trace lists only builtin plugins, no MCP servers, the default
   output style, and only the skills/agents/slash commands that stock Claude
-  Code 2.1.310 ships with. Anything namespaced (``plugin:skill``) or outside
+  Code 2.1.325 ships with. Anything namespaced (``plugin:skill``) or outside
   the stock allowlist means user or project configuration leaked into the
   container.
 * pi arms: the pi system message lists only pi's builtin tools plus, for
@@ -41,8 +41,9 @@ from pathlib import Path
 
 # --- Allowlists -------------------------------------------------------------
 
-# Stock Claude Code 2.1.310 (observed in a clean container: empty HOME, no
-# project .claude/, no MCP config). Update when the pinned CC version changes.
+# Stock Claude Code 2.1.325 (observed in a clean container: empty HOME, no
+# project .claude/, no MCP config). Skills and agents are the same as in
+# 2.1.304 and 2.1.310. Update when the pinned CC version changes.
 CC_STOCK_SKILLS = frozenset(
     {
         "deep-research",
@@ -70,7 +71,9 @@ CC_STOCK_AGENTS = frozenset(
     {"claude", "Explore", "general-purpose", "Plan", "statusline-setup"}
 )
 # The init event's slash_commands = the stock skills + these 34 builtin
-# commands (53 in total in the 2.1.310 stock init). A user or project command
+# commands (53 in total in the 2.1.310 stock init). 2.1.325 no longer lists
+# `advisor` (52 in total); it stays allowed so older runs still check clean.
+# A user or project command
 # (~/.claude/commands/foo.md, <workspace>/.claude/commands) is not namespaced,
 # so only an allowlist catches it.
 CC_STOCK_SLASH_COMMANDS = CC_STOCK_SKILLS | frozenset(
