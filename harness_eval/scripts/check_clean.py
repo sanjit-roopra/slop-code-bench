@@ -6,7 +6,7 @@
 * Claude Code arms (cc-clean): every ``system``/``init`` event in the
   stream-json trace lists only builtin plugins, no MCP servers, the default
   output style, and only the skills/agents/slash commands that stock Claude
-  Code 2.1.310 ships with. Anything namespaced (``plugin:skill``) or outside
+  Code 2.1.325 ships with. Anything namespaced (``plugin:skill``) or outside
   the stock allowlist means user or project configuration leaked into the
   container.
 * pi arms: the pi system message lists only pi's builtin tools plus, for
@@ -41,8 +41,9 @@ from pathlib import Path
 
 # --- Allowlists -------------------------------------------------------------
 
-# Stock Claude Code 2.1.310 (observed in a clean container: empty HOME, no
-# project .claude/, no MCP config). Update when the pinned CC version changes.
+# Stock Claude Code 2.1.325 (observed in a clean container: empty HOME, no
+# project .claude/, no MCP config). Skills and agents are the same as in
+# 2.1.304 and 2.1.310. Update when the pinned CC version changes.
 CC_STOCK_SKILLS = frozenset(
     {
         "deep-research",
@@ -69,13 +70,12 @@ CC_STOCK_SKILLS = frozenset(
 CC_STOCK_AGENTS = frozenset(
     {"claude", "Explore", "general-purpose", "Plan", "statusline-setup"}
 )
-# The init event's slash_commands = the stock skills + these 34 builtin
-# commands (53 in total in the 2.1.310 stock init). A user or project command
+# The init event's slash_commands = the stock skills + these 33 builtin
+# commands (52 in total in the 2.1.325 stock init). A user or project command
 # (~/.claude/commands/foo.md, <workspace>/.claude/commands) is not namespaced,
 # so only an allowlist catches it.
 CC_STOCK_SLASH_COMMANDS = CC_STOCK_SKILLS | frozenset(
     {
-        "advisor",
         "agents",
         "auto-mode-setup",
         "autocompact",
@@ -111,6 +111,11 @@ CC_STOCK_SLASH_COMMANDS = CC_STOCK_SKILLS | frozenset(
         "team-onboarding",
     }
 )
+# Stock commands that later versions dropped, mapped to the first version
+# without them. Each one is allowed only in an init event from an older
+# version, so a user command with the same name still shows up as a leak on
+# the pinned version. 2.1.304 and 2.1.310 listed `advisor` (53 commands).
+CC_DROPPED_SLASH_COMMANDS = {"advisor": (2, 1, 325)}
 CC_STOCK_OUTPUT_STYLE = "default"
 CC_BUILTIN_PLUGIN_PATH = "builtin"
 
@@ -230,6 +235,35 @@ def iter_events(lines: Iterable[str]) -> Iterator[dict]:
 # --- Claude Code ------------------------------------------------------------
 
 
+def _version_tuple(version: object) -> tuple[int, int, int] | None:
+    """Parse a plain ``major.minor.patch`` version; anything else is None."""
+    if not isinstance(version, str):
+        return None
+    parts = version.split(".")
+    if len(parts) != 3 or not all(part.isdecimal() for part in parts):
+        return None
+    major, minor, patch = (int(part) for part in parts)
+    return major, minor, patch
+
+
+def cc_stock_slash_commands(version: object) -> frozenset[str]:
+    """Stock slash commands for the Claude Code version an init event reports.
+
+    A dropped command is allowed only when the version parses and is older
+    than the version that dropped it. An unknown version gets the current
+    list, so the check stays strict.
+    """
+    parsed = _version_tuple(version)
+    if parsed is None:
+        return CC_STOCK_SLASH_COMMANDS
+    dropped = {
+        cmd
+        for cmd, first_version_without in CC_DROPPED_SLASH_COMMANDS.items()
+        if parsed < first_version_without
+    }
+    return CC_STOCK_SLASH_COMMANDS | dropped
+
+
 def check_cc_events(
     events: Iterable[dict],
     path: str = "<events>",
@@ -293,10 +327,11 @@ def check_cc_events(
             elif agent not in CC_STOCK_AGENTS:
                 reasons.append(f"agent {agent!r} not in stock allowlist")
 
+        stock_commands = cc_stock_slash_commands(version)
         for cmd in event.get("slash_commands") or []:
             if ":" in str(cmd):
                 reasons.append(f"namespaced (plugin) slash command {cmd!r}")
-            elif cmd not in CC_STOCK_SLASH_COMMANDS:
+            elif cmd not in stock_commands:
                 reasons.append(f"slash command {cmd!r} not in stock allowlist")
 
     result.info = {

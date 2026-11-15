@@ -49,7 +49,7 @@ if [[ -z "${DOCKER_HOST:-}" ]] && command -v docker >/dev/null 2>&1; then
   [[ -n "$DOCKER_HOST" ]] && export DOCKER_HOST || unset DOCKER_HOST
 fi
 
-CC_VERSION="2.1.310"
+CC_VERSION="2.1.325"
 CC_TOKEN_FILE="${CC_TOKEN_FILE:-$HOME/.config/scb/cc_oauth_token}"
 PI_AUTH_FILE="${PI_AUTH_FILE:-$HOME/.pi/agent/auth.json}"
 SMOKE_PROBLEM="${SMOKE_PROBLEM:-file_backup}"

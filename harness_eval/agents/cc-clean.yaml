@@ -6,6 +6,8 @@
 #
 # Model and thinking are NOT set here: they come from the run config
 # (model: {provider: claude_code_oauth, name: opus-5.5}, thinking: high).
+# CC_MODEL in the environment overrides the model for run.sh, for example
+# CC_MODEL=claude_code_oauth/fable-5.2.
 # Opus 5.5 is an effort-style model, so SCB maps thinking=high to
 # CLAUDE_CODE_EFFORT_LEVEL=high and never sends MAX_THINKING_TOKENS.
 #
@@ -13,7 +15,7 @@
 # exported from ~/.config/scb/cc_oauth_token at run time only.
 type: claude_code
 binary: claude
-version: 2.1.310
+version: 2.1.325
 permission_mode: bypassPermissions
 timeout: 7200 # seconds per checkpoint invocation
 cost_limits:
