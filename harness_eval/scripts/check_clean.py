@@ -235,13 +235,15 @@ def iter_events(lines: Iterable[str]) -> Iterator[dict]:
 # --- Claude Code ------------------------------------------------------------
 
 
-def _version_tuple(version: object) -> tuple[int, ...] | None:
+def _version_tuple(version: object) -> tuple[int, int, int] | None:
+    """Parse a plain ``major.minor.patch`` version; anything else is None."""
     if not isinstance(version, str):
         return None
-    try:
-        return tuple(int(part) for part in version.split("."))
-    except ValueError:
+    parts = version.split(".")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
         return None
+    major, minor, patch = (int(part) for part in parts)
+    return major, minor, patch
 
 
 def cc_stock_slash_commands(version: object) -> frozenset[str]:
@@ -254,7 +256,11 @@ def cc_stock_slash_commands(version: object) -> frozenset[str]:
     parsed = _version_tuple(version)
     if parsed is None:
         return CC_STOCK_SLASH_COMMANDS
-    dropped = {cmd for cmd, gone in CC_DROPPED_SLASH_COMMANDS.items() if parsed < gone}
+    dropped = {
+        cmd
+        for cmd, first_version_without in CC_DROPPED_SLASH_COMMANDS.items()
+        if parsed < first_version_without
+    }
     return CC_STOCK_SLASH_COMMANDS | dropped
 
 

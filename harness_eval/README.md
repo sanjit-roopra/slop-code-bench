@@ -18,7 +18,7 @@ Run every command below from `harness_eval/`.
 ## Arms
 
 > **Changes (2026-11-15):**
-> - `cc-clean` now runs **Claude Code 2.1.325** (was 2.1.310). Its stock init has the same skills and agents as the 2.1.310 allowlist in `scripts/check_clean.py` and one slash command fewer (`advisor` is gone; the clean check now allows it only for older versions). A full run stopped at 174 of 196 checkpoints checked CLEAN (174 traces).
+> - `cc-clean` now runs **Claude Code 2.1.325** (was 2.1.310). Its stock init has the same skills and agents as the 2.1.310 allowlist in `scripts/check_clean.py` and one slash command fewer (`advisor` is gone; the clean check now allows it only for older versions). A full run stopped at 174 of 196 checkpoints; all 174 traces checked CLEAN.
 > - New model config `configs/models/fable-5.2.yaml` (`claude-fable-5-2`, API list price $8 / $40 per million tokens). Run it with `CC_MODEL=claude_code_oauth/fable-5.2 ./run.sh cc-clean ...`.
 >
 > **Changes (2026-10-25):**

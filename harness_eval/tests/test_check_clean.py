@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import io
 import json
+import re
 import sys
 import tarfile
 from pathlib import Path
@@ -219,7 +220,9 @@ def test_pidt_arm_without_dev_team_loaded_is_dirty():
 def test_cc_slash_allowlist_matches_stock_fixture_exactly():
     init = _events("cc_init_clean.jsonl")[0]
     assert len(init["slash_commands"]) == 53
-    assert set(init["slash_commands"]) == cc.CC_STOCK_SLASH_COMMANDS | {"advisor"}
+    assert set(init["slash_commands"]) == cc.CC_STOCK_SLASH_COMMANDS | set(
+        cc.CC_DROPPED_SLASH_COMMANDS
+    )
     assert set(init["slash_commands"]) == cc.cc_stock_slash_commands("2.1.304")
     assert init["output_style"] == cc.CC_STOCK_OUTPUT_STYLE
 
@@ -235,7 +238,9 @@ def test_pinned_cc_init_matches_allowlist_exactly():
     assert r.status == "CLEAN", r.reasons
 
 
-@pytest.mark.parametrize("version", ["2.1.325", "2.1.400", "3.0.0", None, "dev"])
+@pytest.mark.parametrize(
+    "version", ["2.1.325", "2.1.400", "3.0.0", None, "dev", "2.1", "2.1.325-beta"]
+)
 def test_dropped_command_is_dirty_from_the_version_that_dropped_it(version):
     init = copy.deepcopy(_events("cc_init_clean_2_1_325.jsonl")[0])
     init["slash_commands"].append("advisor")  # e.g. ~/.claude/commands/advisor.md
@@ -248,12 +253,28 @@ def test_dropped_command_is_dirty_from_the_version_that_dropped_it(version):
     assert "slash command 'advisor' not in stock allowlist" in "\n".join(r.reasons)
 
 
-def test_dropped_command_stays_clean_for_older_versions():
-    for version in ("2.1.304", "2.1.310"):
-        init = copy.deepcopy(_events("cc_init_clean.jsonl")[0])
-        init["claude_code_version"] = version
-        r = cc.check_cc_events([init], expect_version=version)
-        assert r.status == "CLEAN", (version, r.reasons)
+# 2.1.310 and 2.1.324 reuse the 2.1.304 fixture with the version overwritten:
+# they check the version gate, not a captured init from those versions.
+@pytest.mark.parametrize("version", ["2.1.304", "2.1.310", "2.1.324"])
+def test_dropped_command_stays_clean_for_older_versions(version):
+    init = copy.deepcopy(_events("cc_init_clean.jsonl")[0])
+    init["claude_code_version"] = version
+    r = cc.check_cc_events([init], expect_version=version)
+    assert r.status == "CLEAN", r.reasons
+
+
+def test_pinned_cc_version_has_a_matching_init_fixture():
+    # A version bump must come with a fresh stock init fixture (STATUS.md).
+    match = re.search(r'^CC_VERSION="([^"]+)"$', (ROOT / "run.sh").read_text(), re.M)
+    assert match, "CC_VERSION not found in run.sh"
+    pinned = match.group(1)
+    fixture = FIX / f"cc_init_clean_{pinned.replace('.', '_')}.jsonl"
+    assert fixture.exists(), f"no stock init fixture for {pinned}"
+    init = _events(fixture.name)[0]
+    assert init["claude_code_version"] == pinned
+    assert set(init["slash_commands"]) == cc.cc_stock_slash_commands(pinned)
+    assert set(init["skills"]) == cc.CC_STOCK_SKILLS
+    assert set(init["agents"]) == cc.CC_STOCK_AGENTS
 
 
 def test_cc_unnamespaced_user_command_and_output_style_are_dirty():
