@@ -240,7 +240,7 @@ def _version_tuple(version: object) -> tuple[int, int, int] | None:
     if not isinstance(version, str):
         return None
     parts = version.split(".")
-    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+    if len(parts) != 3 or not all(part.isdecimal() for part in parts):
         return None
     major, minor, patch = (int(part) for part in parts)
     return major, minor, patch
