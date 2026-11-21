@@ -189,7 +189,7 @@ print(json.dumps(sorted(p.as_posix() for p in kept)))
 
 
 @_needs_uv
-def test_pi_env_snapshot_keeps_only_claude_memory_and_drops_git(tmp_path: Path):
+def test_pi_env_snapshot_keeps_only_dev_team_memory_and_drops_git(tmp_path: Path):
     ws = tmp_path / "ws"
     files = [
         "main.py",
@@ -205,6 +205,15 @@ def test_pi_env_snapshot_keeps_only_claude_memory_and_drops_git(tmp_path: Path):
         ".claude/memo",
         ".claude/memory",  # a file, not the memory/ dir (in another workspace)
         ".claude/memoryx/y",
+        ".pi/dev-team/memory/requests/request-1.md",
+        ".pi/dev-team/memory/build-phase.json",
+        ".pi/dev-team/metrics/x.jsonl",
+        ".pi/dev-team/worktrees/a/main.py",
+        ".pi/dev-team/memoryx/y",
+        ".pi/dev-team.json",
+        ".pi/dev-teamx/memory/z",
+        ".pi/settings.json",
+        ".pi/agents/foo.md",
         ".git/HEAD",
         ".git/objects/ab/cd",
     ]
@@ -226,6 +235,8 @@ def test_pi_env_snapshot_keeps_only_claude_memory_and_drops_git(tmp_path: Path):
         ".claude/memory/progress.md",
         ".claude/memory/sub/notes.md",
         ".gitignore",
+        ".pi/dev-team/memory/build-phase.json",
+        ".pi/dev-team/memory/requests/request-1.md",
         "main.py",
         "plans/plan.md",
     ]

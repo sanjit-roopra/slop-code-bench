@@ -141,7 +141,7 @@ case "$ARM" in
     ENVIRONMENT="$ENV_PI"
     NEEDS_PI_AUTH=1
     ;;
-  pidt-gate-direct|pidt-gate-examples|pidt-gate-examples2|pidt-gate-examples3|pidt-gate-examples5|pidt-gate-examples6|pidt-gate-examples7|pidt-gate-examples8)
+  pidt-gate-direct|pidt-gate-examples|pidt-gate-examples2|pidt-gate-examples3|pidt-gate-examples5|pidt-gate-examples6|pidt-gate-examples7|pidt-gate-examples8|pidt-gate-examples5s)
     # pi-dev-team, gate profile, direct workflow: a plain request, no /plan, /build or /ship.
     # pidt-gate-examples adds the opt-in example check (DEV_TEAM_EXAMPLES=on, its own image).
     AGENT_YAML="$ROOT/agents/$ARM.yaml"

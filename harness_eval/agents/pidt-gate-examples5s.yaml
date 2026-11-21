@@ -1,0 +1,22 @@
+# Arm pidt-gate-examples5s (v5 on pi-dev-team standalone a6cc0e9): the v5 arm (pidt-gate-examples5) with
+# pi-dev-team made standalone (PR #65: no .claude/, state in .pi/dev-team). Same pi, env and prompt as v5,
+# so a run checks that the standalone cleanup did not move v5.
+type: pi
+binary: pi
+version: 1.4.0-pdta6cc0e9-examples5s
+docker_template: templates/pidt-gate-examples5s.j2
+provider: github-copilot
+thinking: high
+timeout: 10800
+extra_args:
+  - "-e"
+  - /opt/pi-dev-team
+env:
+  PI_TELEMETRY: "0"
+  DEV_TEAM_REVIEW: gate
+  DEV_TEAM_EXAMPLES: "on"
+  DEV_TEAM_MAX_PARALLEL_AGENTS: "12"
+cost_limits:
+  cost_limit: 0
+  net_cost_limit: 0
+  step_limit: 0
