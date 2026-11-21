@@ -180,3 +180,23 @@ Farley overlapped with the final checks (+53 s net, since lean before had no Far
 Medium effort for lenses did not take effect: the main session passes an explicit
 `thinking` on dispatch, which overrides agent frontmatter. n=1; repeat before
 crediting the speed-ups.
+
+## pi-dev-team standalone: v5 check (2026-11-21)
+
+pi-dev-team PR #65 made the package stand on its own: no upstream port, no `.claude/` directory, state under `.pi/dev-team/`, `DEV_TEAM_*` environment names. The default flow (gate profile plus example check, "v5") was meant to stay the same. Arm `pidt-gate-examples5s` is the v5 arm with pi-dev-team at `a6cc0e9` (the PR head). It uses the same pi (1.4.0), model, prompt and environment as v5.
+
+Snapshot globs: the pidt environment now keeps `.pi/dev-team/memory/**` and drops the rest of `.pi/`, the same way it keeps `.claude/memory/**`. SCB's default ignore list also gains `.pi/dev-team/*`. Without this, `--resume` from a snapshot of a pi-dev-team run on the new layout would lose the saved requests and phase files.
+
+Run `results/20261121-pidt-gate-examples5s-smoke-r1`: `SMOKE_PROBLEM=file_backup,layered_config_synthesizer SMOKE_CHECKPOINTS=8`, 2 workers, finished, CLEAN (8 traces).
+
+| | standalone | v5 r1 | v5 r3 |
+|---|---|---|---|
+| file_backup tests | 116/239 | 116/239 | 118/239 |
+| layered_config_synthesizer tests | 147/253 | 134/253 | 133/253 |
+| core checkpoints (file_backup, layered) | 4, 1 | 4, 1 | 4, 1 |
+| cc_max | 10 | 10 | 10 |
+| erosion at the last checkpoint | 0.000 | 0.000 | 0.000 |
+
+Seven of eight checkpoints are within 3 tests of v5. The layered gain is all in checkpoint 4 (51 against 35 of 98), which is inside the run-to-run noise seen before. Conclusion: the standalone cleanup did not move v5 on these two problems.
+
+Cost: reported at 127 + 134 credits, but every message in this run is priced at exactly half the rate of v5's messages (output 5 instead of 10 per million tokens). The only 0.5 multiplier in pi-ai's cost code is the `flex` service tier (`openai-responses.js`, `getServiceTierCostMultiplier`), and nothing in pi-dev-team or this harness sets a tier, so the tier most likely comes back from Copilot. Token counts are in line with v5. At full rate the run is about 520 credits. This is the same half-rate effect already seen on the pi-stock and v1 runs.

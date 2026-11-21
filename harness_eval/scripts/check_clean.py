@@ -165,6 +165,8 @@ ARMS = {
     },
     # v8 (pi-dev-team examples-v8): the v7 code base under DEV_TEAM_EXAMPLES=on, so no freeze tool.
     "pidt-gate-examples8": {"kind": "pi", "dev_team": True, "extra_tools": ["dev_team_approve_examples"]},
+    # v5 on pi-dev-team standalone (a6cc0e9, PR #65): same tools as v5.
+    "pidt-gate-examples5s": {"kind": "pi", "dev_team": True, "extra_tools": ["dev_team_approve_examples"]},
     "pidt-plain-std": {"kind": "pi", "dev_team": True},  # retired 2026-10-26; old results only
 }
 

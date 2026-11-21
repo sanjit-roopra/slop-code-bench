@@ -22,6 +22,11 @@
 #     etc. are all dropped; .claude/memory/** is kept (needed for --resume
 #     from a snapshot). tests/test_run_scripts.py checks this against SCB's
 #     own matcher.
+#   - pi-dev-team's standalone layout moved that state to .pi/dev-team/. The
+#     same trick keeps .pi/dev-team/memory/** and drops every other .pi/ entry
+#     (.pi/dev-team/metrics/, .pi/dev-team/worktrees/, .pi/dev-team.json,
+#     .pi/settings.json, ...). The .claude/ globs stay for runs pinned to an
+#     older pi-dev-team commit.
 #   - .git/ is dropped. pidt's prompt runs `git init` + a baseline commit, so
 #     keeping it would make pi-arm snapshots (file counts, archive size) not
 #     comparable with cc-clean. --resume does not need the history: the prompt
@@ -81,7 +86,37 @@ snapshot:
     # --- git history from the prompt's `git init` ---
     - ".git/*"
     # --- pi / pi-dev-team artifacts ---
-    - ".pi/*"
+    # --- .pi/: keep dev-team/memory/ (pi-dev-team >= standalone), drop the rest ---
+    - ".pi/[!d]*"
+    - ".pi/d[!e]*"
+    - ".pi/de[!v]*"
+    - ".pi/dev[!-]*"
+    - ".pi/dev-[!t]*"
+    - ".pi/dev-t[!e]*"
+    - ".pi/dev-te[!a]*"
+    - ".pi/dev-tea[!m]*"
+    - ".pi/dev-team[!/]*"
+    - ".pi/dev-team/[!m]*"
+    - ".pi/dev-team/m[!e]*"
+    - ".pi/dev-team/me[!m]*"
+    - ".pi/dev-team/mem[!o]*"
+    - ".pi/dev-team/memo[!r]*"
+    - ".pi/dev-team/memor[!y]*"
+    - ".pi/dev-team/memory[!/]*"
+    - ".pi/d"
+    - ".pi/de"
+    - ".pi/dev"
+    - ".pi/dev-"
+    - ".pi/dev-t"
+    - ".pi/dev-te"
+    - ".pi/dev-tea"
+    - ".pi/dev-team"
+    - ".pi/dev-team/m"
+    - ".pi/dev-team/me"
+    - ".pi/dev-team/mem"
+    - ".pi/dev-team/memo"
+    - ".pi/dev-team/memor"
+    - ".pi/dev-team/memory"
     - ".dev-team-reports/*"
     - ".codegraph/*"
     - "metrics/verify-log.jsonl"

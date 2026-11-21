@@ -133,6 +133,7 @@ class SnapshotConfig(BaseModel):
             # Agent artifacts
             ".opencode/*",
             ".claude/*",
+            ".pi/dev-team/*",
             # Node
             "node_modules/*",
         },
